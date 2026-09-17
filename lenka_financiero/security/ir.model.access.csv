@@ -4,8 +4,12 @@ access_lenka_amortization_user,lenka.amortization.user,model_lenka_amortization_
 access_lenka_extra_payment_user,lenka.extra.payment.user,model_lenka_extra_payment_plan,lenka_financiero.group_lenka_user,1,1,1,0
 access_lenka_funding_user,lenka.funding.user,model_lenka_funding_line,lenka_financiero.group_lenka_user,1,1,1,0
 access_lenka_guarantee_user,lenka.guarantee.user,model_lenka_guarantee,lenka_financiero.group_lenka_user,1,1,1,0
+access_lenka_payment_user,lenka.payment.user,model_lenka_payment,lenka_financiero.group_lenka_user,1,1,1,0
+access_lenka_payment_allocation_user,lenka.payment.allocation.user,model_lenka_payment_allocation,lenka_financiero.group_lenka_user,1,0,0,0
 access_lenka_operation_manager,lenka.operation.manager,model_lenka_financial_operation,lenka_financiero.group_lenka_manager,1,1,1,1
 access_lenka_amortization_manager,lenka.amortization.manager,model_lenka_amortization_line,lenka_financiero.group_lenka_manager,1,1,1,1
 access_lenka_extra_payment_manager,lenka.extra.payment.manager,model_lenka_extra_payment_plan,lenka_financiero.group_lenka_manager,1,1,1,1
 access_lenka_funding_manager,lenka.funding.manager,model_lenka_funding_line,lenka_financiero.group_lenka_manager,1,1,1,1
 access_lenka_guarantee_manager,lenka.guarantee.manager,model_lenka_guarantee,lenka_financiero.group_lenka_manager,1,1,1,1
+access_lenka_payment_manager,lenka.payment.manager,model_lenka_payment,lenka_financiero.group_lenka_manager,1,1,1,1
+access_lenka_payment_allocation_manager,lenka.payment.allocation.manager,model_lenka_payment_allocation,lenka_financiero.group_lenka_manager,1,1,1,1
