@@ -1,12 +1,12 @@
-from odoo import api, fields, models, _
+from odoo import fields, models, _
 from odoo.exceptions import ValidationError
 
 
 class ResCompanyLenkaAccounting(models.Model):
     _inherit = 'res.company'
 
-    lenka_disbursement_journal_id = fields.Many2one('account.journal', string='Lenka: Diario de desembolsos', domain="[('company_id', '=', id)]")
-    lenka_collection_journal_id = fields.Many2one('account.journal', string='Lenka: Diario de cobros', domain="[('company_id', '=', id)]")
+    lenka_disbursement_journal_id = fields.Many2one('account.journal', string='Lenka: Diario de desembolsos')
+    lenka_collection_journal_id = fields.Many2one('account.journal', string='Lenka: Diario de cobros')
     lenka_portfolio_account_id = fields.Many2one('account.account', string='Lenka: Cartera / capital por cobrar')
     lenka_interest_income_account_id = fields.Many2one('account.account', string='Lenka: Ingreso por intereses')
     lenka_late_fee_income_account_id = fields.Many2one('account.account', string='Lenka: Ingreso por mora')
@@ -40,6 +40,8 @@ class LenkaDisbursementAccounting(models.Model):
         portfolio = company.lenka_portfolio_account_id
         if not journal or not portfolio:
             raise ValidationError(_('Configure el diario de desembolsos y la cuenta de cartera de Lenka antes de contabilizar.'))
+        if journal.company_id != company:
+            raise ValidationError(_('El diario de desembolsos debe pertenecer a la misma empresa de la operacion.'))
         liquidity = journal.default_account_id
         if not liquidity:
             raise ValidationError(_('El diario de desembolsos debe tener una cuenta contable por defecto.'))
@@ -83,6 +85,19 @@ class LenkaDisbursementAccounting(models.Model):
             rec.move_id = move.id
         return True
 
+    def action_open_account_move(self):
+        self.ensure_one()
+        if not self.move_id:
+            raise ValidationError(_('Este desembolso aun no tiene partida contable.'))
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('Partida contable'),
+            'res_model': 'account.move',
+            'view_mode': 'form',
+            'res_id': self.move_id.id,
+            'target': 'current',
+        }
+
 
 class LenkaPaymentAccounting(models.Model):
     _inherit = 'lenka.payment'
@@ -99,6 +114,8 @@ class LenkaPaymentAccounting(models.Model):
         unapplied_account = company.lenka_unapplied_account_id
         if not journal or not portfolio or not interest_income or not late_income:
             raise ValidationError(_('Configure el diario de cobros y las cuentas de cartera, intereses y mora de Lenka antes de contabilizar.'))
+        if journal.company_id != company:
+            raise ValidationError(_('El diario de cobros debe pertenecer a la misma empresa de la operacion.'))
         liquidity = journal.default_account_id
         if not liquidity:
             raise ValidationError(_('El diario de cobros debe tener una cuenta contable por defecto.'))
@@ -107,6 +124,9 @@ class LenkaPaymentAccounting(models.Model):
         total_to_book = applied_total + self.unapplied_amount
         if self.unapplied_amount and not unapplied_account:
             raise ValidationError(_('Existe saldo no aplicado. Configure la cuenta de cobros no aplicados / anticipos.'))
+        if total_to_book <= 0:
+            raise ValidationError(_('El cobro no tiene monto aplicable para contabilizar.'))
+
         amount_company = self.currency_id._convert(total_to_book, company.currency_id, company, self.payment_date)
         partner = self.partner_id
         lines = [(0, 0, {
@@ -157,3 +177,16 @@ class LenkaPaymentAccounting(models.Model):
             move.action_post()
             rec.move_id = move.id
         return True
+
+    def action_open_account_move(self):
+        self.ensure_one()
+        if not self.move_id:
+            raise ValidationError(_('Este cobro aun no tiene partida contable.'))
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('Partida contable'),
+            'res_model': 'account.move',
+            'view_mode': 'form',
+            'res_id': self.move_id.id,
+            'target': 'current',
+        }
