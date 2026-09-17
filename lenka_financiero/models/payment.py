@@ -13,7 +13,7 @@ class LenkaPayment(models.Model):
     partner_id = fields.Many2one(related='operation_id.partner_id', store=True, string='Cliente')
     currency_id = fields.Many2one(related='operation_id.currency_id', store=True)
     payment_date = fields.Date(string='Fecha de pago', required=True, default=fields.Date.context_today)
-    amount = fields.Monetary(string='Monto pagado por cliente', required=True, tracking=True)
+    amount = fields.Monetary(string='Monto procesado / entregado por cliente', required=True, tracking=True)
     payment_method = fields.Selection([
         ('cash', 'Efectivo'), ('transfer', 'Transferencia'), ('check', 'Cheque'),
         ('card', 'Tarjeta'), ('other', 'Otro')
@@ -21,9 +21,9 @@ class LenkaPayment(models.Model):
     reference = fields.Char(string='Referencia')
     state = fields.Selection([('draft', 'Borrador'), ('posted', 'Aplicado'), ('cancelled', 'Anulado')], default='draft', tracking=True)
 
-    card_fee_rate = fields.Float(string='Comision tarjeta (%)', default=3.5)
+    card_fee_rate = fields.Float(string='Comision tarjeta (%)', default=lambda self: self._default_card_fee_rate())
     card_fee_amount = fields.Monetary(string='Cargo bancario / tarjeta', compute='_compute_card_net', store=True)
-    net_bank_amount = fields.Monetary(string='Neto recibido en banco', compute='_compute_card_net', store=True)
+    net_bank_amount = fields.Monetary(string='Monto neto aplicable a la deuda', compute='_compute_card_net', store=True)
 
     late_fee_amount = fields.Monetary(string='Aplicado a mora', readonly=True)
     interest_amount = fields.Monetary(string='Aplicado a interes', readonly=True)
@@ -32,6 +32,13 @@ class LenkaPayment(models.Model):
     unapplied_amount = fields.Monetary(string='Saldo sin aplicar', readonly=True)
     allocation_line_ids = fields.One2many('lenka.payment.allocation', 'payment_id', string='Aplicacion', copy=False, readonly=True)
     notes = fields.Text(string='Observaciones')
+
+    def _default_card_fee_rate(self):
+        value = self.env['ir.config_parameter'].sudo().get_param('lenka_financiero.card_fee_rate', '3.5')
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 3.5
 
     @api.depends('amount', 'payment_method', 'card_fee_rate')
     def _compute_card_net(self):
@@ -66,32 +73,17 @@ class LenkaPayment(models.Model):
             if not rec.operation_id.schedule_line_ids:
                 raise ValidationError(_('La operacion no tiene tabla de amortizacion.'))
 
-            remaining = rec.amount
+            # IMPORTANTE: si el pago es con tarjeta, solo el neto recibido despues
+            # de la comision bancaria se aplica a la deuda del cliente.
+            remaining = rec.net_bank_amount
             allocations = []
             late_total = interest_total = capital_total = 0.0
 
-            # 1) Se pagan solamente intereses exigibles a la fecha del pago.
-            # Nunca se anticipan intereses de cuotas futuras.
             due_lines = rec.operation_id.schedule_line_ids.filtered(
                 lambda l: l.date and l.date <= rec.payment_date
             ).sorted(key=lambda l: (l.date, l.sequence))
 
-            for line in due_lines:
-                if remaining <= 0:
-                    break
-                due_interest = max(line.interest - line.interest_paid, 0.0)
-                if due_interest <= 0:
-                    continue
-                pay_interest = min(remaining, due_interest)
-                remaining -= pay_interest
-                line.interest_paid += pay_interest
-                interest_total += pay_interest
-                allocations.append((0, 0, {
-                    'schedule_line_id': line.id,
-                    'interest_amount': pay_interest,
-                }))
-
-            # 2) La mora es un cargo independiente y solo se paga si ya fue generada.
+            # 1) Mora vencida.
             for line in due_lines:
                 if remaining <= 0:
                     break
@@ -107,7 +99,23 @@ class LenkaPayment(models.Model):
                     'late_fee_amount': pay_late,
                 }))
 
-            # 3) Se cubre el capital exigible de las cuotas vencidas/a la fecha.
+            # 2) Intereses exigibles a la fecha. Nunca se pagan intereses futuros.
+            for line in due_lines:
+                if remaining <= 0:
+                    break
+                due_interest = max(line.interest - line.interest_paid, 0.0)
+                if due_interest <= 0:
+                    continue
+                pay_interest = min(remaining, due_interest)
+                remaining -= pay_interest
+                line.interest_paid += pay_interest
+                interest_total += pay_interest
+                allocations.append((0, 0, {
+                    'schedule_line_id': line.id,
+                    'interest_amount': pay_interest,
+                }))
+
+            # 3) Capital exigible de cuotas vencidas/a la fecha.
             for line in due_lines:
                 if remaining <= 0:
                     break
@@ -123,8 +131,8 @@ class LenkaPayment(models.Model):
                     'capital_amount': pay_capital,
                 }))
 
-            # 4) Todo excedente, despues de intereses/cargos exigibles, va a capital.
-            # No se usa para pagar intereses futuros.
+            # 4) Si paga mas, todo excedente se aplica directamente a capital.
+            # No se anticipan intereses de cuotas futuras.
             outstanding_after_due = max(rec.operation_id.financed_amount - rec.operation_id.paid_capital - capital_total, 0.0)
             extra_capital = min(remaining, outstanding_after_due)
             remaining -= extra_capital
