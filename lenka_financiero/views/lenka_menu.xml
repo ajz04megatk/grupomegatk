@@ -5,4 +5,6 @@
     <menuitem id="menu_lenka_operations" name="Operaciones" parent="menu_lenka_root" action="action_lenka_operations" sequence="20"/>
     <menuitem id="menu_lenka_payments" name="Cobros" parent="menu_lenka_root" action="action_lenka_payments" sequence="30"/>
     <menuitem id="menu_lenka_disbursements" name="Desembolsos" parent="menu_lenka_root" action="action_lenka_disbursements" sequence="40"/>
+    <menuitem id="menu_lenka_investments" name="Inversionistas / Depositantes" parent="menu_lenka_root" action="action_lenka_investments" sequence="50"/>
+    <menuitem id="menu_lenka_withdrawals" name="Retiros de inversionistas" parent="menu_lenka_root" action="action_lenka_withdrawals" sequence="60"/>
 </odoo>
