@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="res_config_settings_view_form_lenka" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.lenka</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="inside">
+                <app string="Financiero Lenka" name="lenka_financiero" groups="lenka_financiero.group_lenka_manager">
+                    <block title="Cobros y tarjetas">
+                        <setting string="Comision de tarjeta (%)" help="Porcentaje retenido por el banco o POS. El neto resultante es el monto que se aplica a la deuda del cliente.">
+                            <field name="lenka_card_fee_rate"/>
+                        </setting>
+                    </block>
+                </app>
+            </xpath>
+        </field>
+    </record>
+</odoo>
