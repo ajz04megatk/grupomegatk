@@ -57,11 +57,22 @@
                         <group>
                             <field name="first_payment_date"/>
                             <field name="calculation_method"/>
+                            <field name="balloon_base_payment" invisible="calculation_method != 'balloon'"/>
+                            <field name="recalculation_policy"/>
                             <field name="residual_purchase_percent" invisible="operation_type != 'lease'"/>
                             <field name="residual_purchase_amount" readonly="1" invisible="operation_type != 'lease'"/>
                         </group>
                     </group>
                     <notebook>
+                        <page string="Pagos extraordinarios" invisible="calculation_method != 'balloon'">
+                            <field name="extra_payment_line_ids">
+                                <list editable="bottom">
+                                    <field name="installment_number"/>
+                                    <field name="amount"/>
+                                    <field name="note"/>
+                                </list>
+                            </field>
+                        </page>
                         <page string="Tabla de amortizacion">
                             <field name="schedule_line_ids" readonly="1">
                                 <list create="0" delete="0">
