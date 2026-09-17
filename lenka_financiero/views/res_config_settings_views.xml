@@ -12,6 +12,26 @@
                             <field name="lenka_card_fee_rate"/>
                         </setting>
                     </block>
+                    <block title="Integracion contable Odoo">
+                        <setting string="Diario de desembolsos">
+                            <field name="lenka_disbursement_journal_id"/>
+                        </setting>
+                        <setting string="Diario de cobros">
+                            <field name="lenka_collection_journal_id"/>
+                        </setting>
+                        <setting string="Cuenta de cartera / capital por cobrar">
+                            <field name="lenka_portfolio_account_id"/>
+                        </setting>
+                        <setting string="Cuenta de ingreso por intereses">
+                            <field name="lenka_interest_income_account_id"/>
+                        </setting>
+                        <setting string="Cuenta de ingreso por mora">
+                            <field name="lenka_late_fee_income_account_id"/>
+                        </setting>
+                        <setting string="Cuenta de cobros no aplicados / anticipos">
+                            <field name="lenka_unapplied_account_id"/>
+                        </setting>
+                    </block>
                 </app>
             </xpath>
         </field>
