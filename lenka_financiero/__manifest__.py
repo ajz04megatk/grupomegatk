@@ -7,6 +7,7 @@
     'license': 'LGPL-3',
     'depends': ['base', 'mail', 'account', 'product'],
     'data': [
+        'security/security.xml',
         'security/ir.model.access.csv',
         'data/sequence.xml',
         'views/lenka_financial_views.xml',
