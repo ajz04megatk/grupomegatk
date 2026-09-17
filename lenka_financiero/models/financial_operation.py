@@ -11,7 +11,9 @@ class LenkaFinancialOperation(models.Model):
     name = fields.Char(default='Nuevo', readonly=True, copy=False, tracking=True)
     is_quote = fields.Boolean(string='Es cotizacion', default=True, tracking=True)
     partner_id = fields.Many2one('res.partner', string='Cliente', required=True, tracking=True)
-    guarantor_ids = fields.Many2many('res.partner', 'lenka_operation_guarantor_rel', 'operation_id', 'partner_id', string='Avales')
+    guarantor_ids = fields.Many2many(
+        'res.partner', 'lenka_operation_guarantor_rel', 'operation_id', 'partner_id', string='Avales'
+    )
     operation_type = fields.Selection([
         ('loan', 'Prestamo'),
         ('financing', 'Financiamiento'),
@@ -30,19 +32,23 @@ class LenkaFinancialOperation(models.Model):
     first_payment_date = fields.Date(string='Primera cuota')
     calculation_method = fields.Selection([
         ('level', 'Cuota nivelada'),
-        ('balance', 'Interes sobre saldo'),
+        ('balance', 'Interes sobre saldo / capital fijo'),
         ('interest_only', 'Solo intereses + capital al final'),
         ('balloon', 'Cuota bomba / extraordinarios'),
         ('custom', 'Plan personalizado'),
     ], string='Metodo de calculo', required=True, default='level')
     residual_purchase_percent = fields.Float(string='Opcion de compra (%)', default=0.0)
-    residual_purchase_amount = fields.Monetary(string='Opcion de compra', compute='_compute_residual_purchase_amount', store=True)
+    residual_purchase_amount = fields.Monetary(
+        string='Opcion de compra', compute='_compute_residual_purchase_amount', store=True
+    )
     state = fields.Selection([
         ('draft', 'Borrador'), ('review', 'En revision'), ('approved', 'Aprobada'),
         ('contracted', 'Contratada'), ('active', 'Activa'), ('done', 'Finalizada'),
         ('rejected', 'Rechazada'), ('cancelled', 'Cancelada')
     ], default='draft', tracking=True)
-    schedule_line_ids = fields.One2many('lenka.amortization.line', 'operation_id', string='Tabla de amortizacion', copy=False)
+    schedule_line_ids = fields.One2many(
+        'lenka.amortization.line', 'operation_id', string='Tabla de amortizacion', copy=False
+    )
     funding_line_ids = fields.One2many('lenka.funding.line', 'operation_id', string='Fondeo')
     guarantee_ids = fields.One2many('lenka.guarantee', 'operation_id', string='Garantias')
     notes = fields.Text(string='Observaciones')
@@ -64,7 +70,10 @@ class LenkaFinancialOperation(models.Model):
                 vals['name'] = self.env['ir.sequence'].next_by_code('lenka.financial.operation') or 'Nuevo'
         return super().create(vals_list)
 
-    @api.constrains('principal_amount', 'down_payment', 'interest_rate', 'term_months')
+    @api.constrains(
+        'principal_amount', 'down_payment', 'interest_rate', 'term_months',
+        'residual_purchase_percent', 'partner_id', 'guarantor_ids'
+    )
     def _check_financial_values(self):
         for rec in self:
             if rec.principal_amount <= 0:
@@ -75,34 +84,75 @@ class LenkaFinancialOperation(models.Model):
                 raise ValidationError(_('La tasa no puede ser negativa.'))
             if rec.term_months <= 0:
                 raise ValidationError(_('El plazo debe ser mayor que cero.'))
+            if rec.residual_purchase_percent < 0 or rec.residual_purchase_percent > 100:
+                raise ValidationError(_('La opcion de compra debe estar entre 0% y 100%.'))
+            if rec.partner_id and rec.partner_id in rec.guarantor_ids:
+                raise ValidationError(_('El cliente no puede ser su propio aval.'))
+
+    @api.constrains('funding_line_ids')
+    def _check_funding_total(self):
+        for rec in self.filtered(lambda r: r.funding_line_ids):
+            if any(line.amount <= 0 for line in rec.funding_line_ids):
+                raise ValidationError(_('Cada fuente de fondeo debe tener un monto mayor que cero.'))
+
+    def _monthly_rate(self):
+        self.ensure_one()
+        return self.interest_rate / 100.0 if self.rate_period == 'monthly' else self.interest_rate / 1200.0
 
     def action_generate_schedule(self):
         for rec in self:
             if rec.calculation_method == 'custom':
                 continue
+
             rec.schedule_line_ids.unlink()
             principal = rec.financed_amount
             n = rec.term_months
-            monthly_rate = rec.interest_rate / 100.0 if rec.rate_period == 'monthly' else rec.interest_rate / 1200.0
+            monthly_rate = rec._monthly_rate()
             balance = principal
-            if rec.calculation_method in ('level', 'balance'):
-                payment = principal / n if not monthly_rate else principal * monthly_rate / (1 - (1 + monthly_rate) ** -n)
-            elif rec.calculation_method == 'interest_only':
-                payment = principal * monthly_rate
-            else:
-                payment = principal / n if n else 0.0
-            payment_date = rec.first_payment_date or rec.date
+            payment_date = rec.first_payment_date or fields.Date.add(rec.date, months=1)
             lines = []
+
+            if not principal:
+                raise ValidationError(_('El monto financiado debe ser mayor que cero para generar el plan.'))
+
+            # Cuota nivelada: sistema de anualidad. Capital e interes cambian,
+            # pero el total de la cuota se mantiene nivelado salvo ajuste de redondeo final.
+            if rec.calculation_method == 'level':
+                level_payment = (
+                    principal / n
+                    if not monthly_rate
+                    else principal * monthly_rate / (1 - (1 + monthly_rate) ** -n)
+                )
+            else:
+                level_payment = 0.0
+
+            # Interes sobre saldo: capital fijo por periodo + interes calculado
+            # sobre el saldo pendiente. La cuota disminuye conforme baja el saldo.
+            fixed_capital = principal / n if rec.calculation_method == 'balance' else 0.0
+
             for number in range(1, n + 1):
                 interest = balance * monthly_rate
-                if rec.calculation_method == 'interest_only':
-                    capital = principal if number == n else 0.0
-                    total = interest + capital
-                else:
-                    capital = min(max(payment - interest, 0.0), balance)
+
+                if rec.calculation_method == 'level':
+                    capital = min(max(level_payment - interest, 0.0), balance)
                     if number == n:
                         capital = balance
                     total = capital + interest
+                elif rec.calculation_method == 'balance':
+                    capital = balance if number == n else min(fixed_capital, balance)
+                    total = capital + interest
+                elif rec.calculation_method == 'interest_only':
+                    capital = principal if number == n else 0.0
+                    total = interest + capital
+                elif rec.calculation_method == 'balloon':
+                    # Estructura inicial: capital uniforme. Los pagos extraordinarios
+                    # se incorporaran como lineas configurables en el siguiente bloque.
+                    capital = balance if number == n else min(principal / n, balance)
+                    total = capital + interest
+                else:
+                    capital = 0.0
+                    total = interest
+
                 end_balance = max(balance - capital, 0.0)
                 lines.append((0, 0, {
                     'sequence': number,
@@ -115,11 +165,17 @@ class LenkaFinancialOperation(models.Model):
                 }))
                 balance = end_balance
                 payment_date = fields.Date.add(payment_date, months=1)
+
             rec.schedule_line_ids = lines
         return True
 
     def action_convert_to_application(self):
-        self.write({'is_quote': False, 'state': 'review'})
+        for rec in self:
+            if not rec.is_quote:
+                continue
+            if not rec.schedule_line_ids and rec.calculation_method != 'custom':
+                rec.action_generate_schedule()
+            rec.write({'is_quote': False, 'state': 'review'})
         return True
 
 
@@ -156,6 +212,14 @@ class LenkaFundingLine(models.Model):
     amount = fields.Monetary(string='Monto', required=True)
     cost_rate = fields.Float(string='Costo financiero (%)')
     cost_period = fields.Selection([('monthly', 'Mensual'), ('annual', 'Anual')], default='annual')
+
+    @api.constrains('amount', 'cost_rate')
+    def _check_values(self):
+        for rec in self:
+            if rec.amount <= 0:
+                raise ValidationError(_('El monto de fondeo debe ser mayor que cero.'))
+            if rec.cost_rate < 0:
+                raise ValidationError(_('El costo financiero no puede ser negativo.'))
 
 
 class LenkaGuarantee(models.Model):
