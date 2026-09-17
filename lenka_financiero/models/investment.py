@@ -13,20 +13,17 @@ class LenkaInvestment(models.Model):
     company_id = fields.Many2one('res.company', required=True, default=lambda self: self.env.company)
     currency_id = fields.Many2one('res.currency', required=True, default=lambda self: self.env.company.currency_id)
     investment_type = fields.Selection([
-        ('fixed', 'Plazo fijo'),
-        ('current', 'Cuenta corriente / a la vista'),
-        ('other', 'Otro'),
+        ('fixed', 'Plazo fijo'), ('current', 'Cuenta corriente / a la vista'), ('other', 'Otro')
     ], string='Tipo', required=True, default='fixed', tracking=True)
     principal_amount = fields.Monetary(string='Capital recibido', required=True, tracking=True)
-    passive_rate = fields.Float(string='Tasa pasiva (%)', required=True, tracking=True)
+    passive_rate = fields.Float(string='Tasa contractual preferencial (%)', required=True, tracking=True)
+    early_withdrawal_rate = fields.Float(string='Tasa por retiro anticipado (%)', default=0.0, tracking=True)
     rate_period = fields.Selection([('monthly', 'Mensual'), ('annual', 'Anual')], default='annual', required=True)
     start_date = fields.Date(string='Fecha de inicio', required=True, default=fields.Date.context_today)
     maturity_date = fields.Date(string='Vencimiento')
     term_months = fields.Integer(string='Plazo (meses)')
     capitalization = fields.Selection([
-        ('monthly', 'Capitalizacion mensual'),
-        ('maturity', 'Pago al vencimiento'),
-        ('manual', 'Manual'),
+        ('monthly', 'Capitalizacion mensual'), ('maturity', 'Pago al vencimiento'), ('manual', 'Manual')
     ], string='Forma de reconocimiento', default='monthly', required=True)
     receiving_account = fields.Char(string='Cuenta receptora / referencia bancaria')
     contract_reference = fields.Char(string='Referencia de contrato')
@@ -49,13 +46,13 @@ class LenkaInvestment(models.Model):
                 vals['name'] = self.env['ir.sequence'].next_by_code('lenka.investment') or 'Nuevo'
         return super().create(vals_list)
 
-    @api.constrains('principal_amount', 'passive_rate', 'term_months', 'start_date', 'maturity_date')
+    @api.constrains('principal_amount', 'passive_rate', 'early_withdrawal_rate', 'term_months', 'start_date', 'maturity_date')
     def _check_values(self):
         for rec in self:
             if rec.principal_amount <= 0:
                 raise ValidationError(_('El capital recibido debe ser mayor que cero.'))
-            if rec.passive_rate < 0:
-                raise ValidationError(_('La tasa pasiva no puede ser negativa.'))
+            if rec.passive_rate < 0 or rec.early_withdrawal_rate < 0:
+                raise ValidationError(_('Las tasas no pueden ser negativas.'))
             if rec.term_months < 0:
                 raise ValidationError(_('El plazo no puede ser negativo.'))
             if rec.maturity_date and rec.maturity_date < rec.start_date:
@@ -70,9 +67,13 @@ class LenkaInvestment(models.Model):
             rec.withdrawn_principal = sum(rec.withdrawal_ids.filtered(lambda w: w.state == 'posted').mapped('principal_amount'))
             rec.outstanding_principal = max(rec.principal_amount - rec.withdrawn_principal, 0.0)
 
+    def _monthly_rate_for(self, rate):
+        self.ensure_one()
+        return rate / 100.0 if self.rate_period == 'monthly' else rate / 1200.0
+
     def _monthly_rate(self):
         self.ensure_one()
-        return self.passive_rate / 100.0 if self.rate_period == 'monthly' else self.passive_rate / 1200.0
+        return self._monthly_rate_for(self.passive_rate)
 
     def action_activate(self):
         for rec in self:
@@ -85,40 +86,57 @@ class LenkaInvestment(models.Model):
             rec.state = 'active'
         return True
 
+    def _generate_interest_until(self, end_date, rate, replace=False):
+        self.ensure_one()
+        if replace:
+            self.interest_line_ids.filtered(lambda l: l.state != 'paid').unlink()
+        monthly_rate = self._monthly_rate_for(rate)
+        base = self.principal_amount
+        current = fields.Date.add(self.start_date, months=1)
+        existing_dates = set(self.interest_line_ids.filtered(lambda l: l.state != 'cancelled').mapped('period_date'))
+        while current <= end_date:
+            if self.maturity_date and current > self.maturity_date:
+                break
+            if current not in existing_dates:
+                amount = base * monthly_rate
+                self.env['lenka.investment.interest'].create({
+                    'investment_id': self.id,
+                    'period_date': current,
+                    'base_amount': base,
+                    'rate': rate,
+                    'amount': amount,
+                    'state': 'accrued',
+                })
+                if self.capitalization == 'monthly':
+                    base += amount
+            else:
+                existing = self.interest_line_ids.filtered(lambda l: l.period_date == current and l.state != 'cancelled')[:1]
+                if existing and self.capitalization == 'monthly':
+                    base = existing.base_amount + existing.amount
+            current = fields.Date.add(current, months=1)
+        return base
+
     def action_generate_monthly_interest(self):
         for rec in self:
             if rec.state not in ('active', 'matured'):
                 raise ValidationError(_('La inversion debe estar activa para generar intereses.'))
-            monthly_rate = rec._monthly_rate()
-            base = rec.outstanding_principal
-            if base <= 0:
-                continue
-            next_date = rec.start_date
-            existing_dates = set(rec.interest_line_ids.mapped('period_date'))
-            if existing_dates:
-                next_date = fields.Date.add(max(existing_dates), months=1)
-            while True:
-                next_date = fields.Date.add(next_date, months=1) if next_date == rec.start_date else next_date
-                if rec.maturity_date and next_date > rec.maturity_date:
-                    break
-                if next_date > fields.Date.context_today(rec):
-                    break
-                if next_date not in existing_dates:
-                    amount = base * monthly_rate
-                    self.env['lenka.investment.interest'].create({
-                        'investment_id': rec.id,
-                        'period_date': next_date,
-                        'base_amount': base,
-                        'rate': rec.passive_rate,
-                        'amount': amount,
-                        'state': 'accrued',
-                    })
-                    if rec.capitalization == 'monthly':
-                        base += amount
-                next_date = fields.Date.add(next_date, months=1)
+            end_date = min(fields.Date.context_today(rec), rec.maturity_date) if rec.maturity_date else fields.Date.context_today(rec)
+            rec._generate_interest_until(end_date, rec.passive_rate, replace=False)
             if rec.maturity_date and fields.Date.context_today(rec) >= rec.maturity_date:
                 rec.state = 'matured'
         return True
+
+    def action_recalculate_early_withdrawal(self, withdrawal_date):
+        self.ensure_one()
+        if not self.maturity_date or withdrawal_date >= self.maturity_date:
+            return self.accrued_interest
+        if self.early_withdrawal_rate <= 0:
+            raise ValidationError(_('Configure la tasa aplicable por retiro anticipado.'))
+        paid_lines = self.interest_line_ids.filtered(lambda l: l.state == 'paid')
+        if paid_lines:
+            raise ValidationError(_('Existen intereses ya pagados. Debe regularizarse el ajuste contable antes de recalcular el retiro anticipado.'))
+        self._generate_interest_until(withdrawal_date, self.early_withdrawal_rate, replace=True)
+        return sum(self.interest_line_ids.filtered(lambda l: l.state == 'accrued' and l.period_date <= withdrawal_date).mapped('amount'))
 
 
 class LenkaInvestmentInterest(models.Model):
@@ -146,10 +164,9 @@ class LenkaInvestmentWithdrawal(models.Model):
     currency_id = fields.Many2one(related='investment_id.currency_id', store=True)
     date = fields.Date(required=True, default=fields.Date.context_today)
     principal_amount = fields.Monetary(string='Capital a retirar', required=True)
-    accrued_interest_amount = fields.Monetary(string='Interes reconocido')
+    accrued_interest_amount = fields.Monetary(string='Interes reconocido', readonly=True)
     early_withdrawal = fields.Boolean(string='Retiro anticipado', compute='_compute_early_withdrawal', store=True)
-    penalty_rate = fields.Float(string='Tasa de penalizacion / tasa reducida (%)')
-    penalty_amount = fields.Monetary(string='Ajuste por retiro anticipado', compute='_compute_total', store=True)
+    effective_rate = fields.Float(string='Tasa efectiva aplicada (%)', readonly=True)
     total_amount = fields.Monetary(string='Total a pagar', compute='_compute_total', store=True)
     reference = fields.Char(string='Referencia')
     state = fields.Selection([('draft', 'Borrador'), ('posted', 'Aplicado'), ('cancelled', 'Anulado')], default='draft', tracking=True)
@@ -159,29 +176,39 @@ class LenkaInvestmentWithdrawal(models.Model):
         for rec in self:
             rec.early_withdrawal = bool(rec.investment_id.maturity_date and rec.date < rec.investment_id.maturity_date)
 
-    @api.depends('principal_amount', 'accrued_interest_amount', 'early_withdrawal', 'penalty_rate')
+    @api.depends('principal_amount', 'accrued_interest_amount')
     def _compute_total(self):
         for rec in self:
-            rec.penalty_amount = rec.accrued_interest_amount * rec.penalty_rate / 100.0 if rec.early_withdrawal else 0.0
-            rec.total_amount = rec.principal_amount + rec.accrued_interest_amount - rec.penalty_amount
+            rec.total_amount = rec.principal_amount + rec.accrued_interest_amount
 
-    @api.constrains('principal_amount', 'penalty_rate')
+    @api.constrains('principal_amount')
     def _check_values(self):
         for rec in self:
             if rec.principal_amount <= 0:
                 raise ValidationError(_('El capital a retirar debe ser mayor que cero.'))
-            if rec.penalty_rate < 0 or rec.penalty_rate > 100:
-                raise ValidationError(_('La tasa de penalizacion debe estar entre 0% y 100%.'))
 
     def action_post(self):
         for rec in self:
             if rec.state != 'draft':
                 continue
-            if rec.investment_id.state not in ('active', 'matured'):
+            investment = rec.investment_id
+            if investment.state not in ('active', 'matured'):
                 raise ValidationError(_('La inversion debe estar activa o vencida para registrar un retiro.'))
-            if rec.principal_amount > rec.investment_id.outstanding_principal + 0.01:
+            if rec.principal_amount > investment.outstanding_principal + 0.01:
                 raise ValidationError(_('El retiro excede el capital vigente.'))
+            if rec.early_withdrawal:
+                recalculated = investment.action_recalculate_early_withdrawal(rec.date)
+                rec.write({
+                    'accrued_interest_amount': recalculated,
+                    'effective_rate': investment.early_withdrawal_rate,
+                })
+            else:
+                investment.action_generate_monthly_interest()
+                rec.write({
+                    'accrued_interest_amount': investment.accrued_interest,
+                    'effective_rate': investment.passive_rate,
+                })
             rec.state = 'posted'
-            if rec.principal_amount >= rec.investment_id.outstanding_principal - 0.01:
-                rec.investment_id.state = 'closed'
+            if rec.principal_amount >= investment.outstanding_principal - 0.01:
+                investment.state = 'closed'
         return True
