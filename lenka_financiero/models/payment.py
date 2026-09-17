@@ -50,8 +50,6 @@ class LenkaPayment(models.Model):
             allocations = []
             late_total = interest_total = capital_total = 0.0
 
-            # Regla inicial configurable conceptualmente: mora -> interes -> capital.
-            # Se aplica primero a las cuotas mas antiguas pendientes.
             for line in rec.operation_id.schedule_line_ids.sorted(key=lambda l: (l.date, l.sequence)):
                 if remaining <= 0:
                     break
@@ -119,3 +117,73 @@ class LenkaPaymentAllocation(models.Model):
     late_fee_amount = fields.Monetary(string='Mora')
     interest_amount = fields.Monetary(string='Interes')
     capital_amount = fields.Monetary(string='Capital')
+
+
+class LenkaFinancialOperationPaymentMixin(models.Model):
+    _inherit = 'lenka.financial.operation'
+
+    payment_ids = fields.One2many('lenka.payment', 'operation_id', string='Cobros')
+    late_fee_rate = fields.Float(string='Mora mensual (%)', default=0.0)
+    grace_days = fields.Integer(string='Dias de gracia', default=0)
+    paid_capital = fields.Monetary(string='Capital pagado', compute='_compute_collection_totals')
+    paid_interest = fields.Monetary(string='Interes pagado', compute='_compute_collection_totals')
+    paid_late_fees = fields.Monetary(string='Mora pagada', compute='_compute_collection_totals')
+    outstanding_capital = fields.Monetary(string='Capital pendiente', compute='_compute_collection_totals')
+
+    @api.depends('schedule_line_ids.capital_paid', 'schedule_line_ids.interest_paid', 'schedule_line_ids.late_fee_paid')
+    def _compute_collection_totals(self):
+        for rec in self:
+            rec.paid_capital = sum(rec.schedule_line_ids.mapped('capital_paid'))
+            rec.paid_interest = sum(rec.schedule_line_ids.mapped('interest_paid'))
+            rec.paid_late_fees = sum(rec.schedule_line_ids.mapped('late_fee_paid'))
+            rec.outstanding_capital = max(rec.financed_amount - rec.paid_capital, 0.0)
+
+    def action_update_late_fees(self):
+        today = fields.Date.context_today(self)
+        for rec in self:
+            monthly_rate = rec.late_fee_rate / 100.0
+            for line in rec.schedule_line_ids:
+                due_date = fields.Date.add(line.date, days=rec.grace_days)
+                if today <= due_date or line.payment_state == 'paid':
+                    continue
+                overdue_capital = max(line.capital - line.capital_paid, 0.0)
+                line.late_fee_due = overdue_capital * monthly_rate
+        return True
+
+    def get_payoff_amount(self):
+        self.ensure_one()
+        pending_interest = sum(max(l.interest - l.interest_paid, 0.0) for l in self.schedule_line_ids)
+        pending_late = sum(max(l.late_fee_due - l.late_fee_paid, 0.0) for l in self.schedule_line_ids)
+        return self.outstanding_capital + pending_interest + pending_late
+
+
+class LenkaAmortizationPaymentMixin(models.Model):
+    _inherit = 'lenka.amortization.line'
+
+    capital_paid = fields.Monetary(string='Capital pagado', default=0.0)
+    interest_paid = fields.Monetary(string='Interes pagado', default=0.0)
+    late_fee_due = fields.Monetary(string='Mora generada', default=0.0)
+    late_fee_paid = fields.Monetary(string='Mora pagada', default=0.0)
+    amount_paid = fields.Monetary(string='Total pagado', compute='_compute_payment_status')
+    amount_due = fields.Monetary(string='Pendiente', compute='_compute_payment_status')
+    payment_state = fields.Selection([
+        ('pending', 'Pendiente'), ('partial', 'Parcial'), ('paid', 'Pagada'), ('overdue', 'Vencida')
+    ], string='Estado de cuota', compute='_compute_payment_status')
+
+    @api.depends('capital', 'interest', 'late_fee_due', 'capital_paid', 'interest_paid', 'late_fee_paid', 'date')
+    def _compute_payment_status(self):
+        today = fields.Date.context_today(self)
+        for line in self:
+            total_due = line.capital + line.interest + line.late_fee_due
+            paid = line.capital_paid + line.interest_paid + line.late_fee_paid
+            pending = max(total_due - paid, 0.0)
+            line.amount_paid = paid
+            line.amount_due = pending
+            if pending <= 0.01:
+                line.payment_state = 'paid'
+            elif paid > 0:
+                line.payment_state = 'partial'
+            elif line.date and line.date < today:
+                line.payment_state = 'overdue'
+            else:
+                line.payment_state = 'pending'
