@@ -14,6 +14,7 @@
         'views/payment_views.xml',
         'views/res_config_settings_views.xml',
         'views/lifecycle_views.xml',
+        'views/investment_views.xml',
         'views/lenka_menu.xml',
         'report/lenka_quote_report.xml',
     ],
