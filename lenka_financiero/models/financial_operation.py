@@ -11,13 +11,9 @@ class LenkaFinancialOperation(models.Model):
     name = fields.Char(default='Nuevo', readonly=True, copy=False, tracking=True)
     is_quote = fields.Boolean(string='Es cotizacion', default=True, tracking=True)
     partner_id = fields.Many2one('res.partner', string='Cliente', required=True, tracking=True)
-    guarantor_ids = fields.Many2many(
-        'res.partner', 'lenka_operation_guarantor_rel', 'operation_id', 'partner_id', string='Avales'
-    )
+    guarantor_ids = fields.Many2many('res.partner', 'lenka_operation_guarantor_rel', 'operation_id', 'partner_id', string='Avales')
     operation_type = fields.Selection([
-        ('loan', 'Prestamo'),
-        ('financing', 'Financiamiento'),
-        ('lease', 'Arrendamiento'),
+        ('loan', 'Prestamo'), ('financing', 'Financiamiento'), ('lease', 'Arrendamiento')
     ], string='Tipo de operacion', required=True, default='financing', tracking=True)
     product_id = fields.Many2one('product.product', string='Equipo / Producto')
     company_id = fields.Many2one('res.company', required=True, default=lambda self: self.env.company)
@@ -37,18 +33,21 @@ class LenkaFinancialOperation(models.Model):
         ('balloon', 'Cuota bomba / extraordinarios'),
         ('custom', 'Plan personalizado'),
     ], string='Metodo de calculo', required=True, default='level')
+    balloon_base_payment = fields.Monetary(string='Cuota regular antes de bombas')
+    extra_payment_line_ids = fields.One2many('lenka.extra.payment.plan', 'operation_id', string='Pagos extraordinarios')
     residual_purchase_percent = fields.Float(string='Opcion de compra (%)', default=0.0)
-    residual_purchase_amount = fields.Monetary(
-        string='Opcion de compra', compute='_compute_residual_purchase_amount', store=True
-    )
+    residual_purchase_amount = fields.Monetary(string='Opcion de compra', compute='_compute_residual_purchase_amount', store=True)
+    recalculation_policy = fields.Selection([
+        ('reduce_term', 'Reducir plazo'),
+        ('reduce_payment', 'Reducir cuota'),
+        ('keep_plan', 'Mantener plan contractual'),
+    ], string='Regla para abonos extraordinarios reales', default='reduce_term', required=True)
     state = fields.Selection([
         ('draft', 'Borrador'), ('review', 'En revision'), ('approved', 'Aprobada'),
         ('contracted', 'Contratada'), ('active', 'Activa'), ('done', 'Finalizada'),
         ('rejected', 'Rechazada'), ('cancelled', 'Cancelada')
     ], default='draft', tracking=True)
-    schedule_line_ids = fields.One2many(
-        'lenka.amortization.line', 'operation_id', string='Tabla de amortizacion', copy=False
-    )
+    schedule_line_ids = fields.One2many('lenka.amortization.line', 'operation_id', string='Tabla de amortizacion', copy=False)
     funding_line_ids = fields.One2many('lenka.funding.line', 'operation_id', string='Fondeo')
     guarantee_ids = fields.One2many('lenka.guarantee', 'operation_id', string='Garantias')
     notes = fields.Text(string='Observaciones')
@@ -70,10 +69,7 @@ class LenkaFinancialOperation(models.Model):
                 vals['name'] = self.env['ir.sequence'].next_by_code('lenka.financial.operation') or 'Nuevo'
         return super().create(vals_list)
 
-    @api.constrains(
-        'principal_amount', 'down_payment', 'interest_rate', 'term_months',
-        'residual_purchase_percent', 'partner_id', 'guarantor_ids'
-    )
+    @api.constrains('principal_amount', 'down_payment', 'interest_rate', 'term_months', 'residual_purchase_percent', 'partner_id', 'guarantor_ids', 'balloon_base_payment')
     def _check_financial_values(self):
         for rec in self:
             if rec.principal_amount <= 0:
@@ -84,10 +80,12 @@ class LenkaFinancialOperation(models.Model):
                 raise ValidationError(_('La tasa no puede ser negativa.'))
             if rec.term_months <= 0:
                 raise ValidationError(_('El plazo debe ser mayor que cero.'))
-            if rec.residual_purchase_percent < 0 or rec.residual_purchase_percent > 100:
+            if not 0 <= rec.residual_purchase_percent <= 100:
                 raise ValidationError(_('La opcion de compra debe estar entre 0% y 100%.'))
             if rec.partner_id and rec.partner_id in rec.guarantor_ids:
                 raise ValidationError(_('El cliente no puede ser su propio aval.'))
+            if rec.balloon_base_payment < 0:
+                raise ValidationError(_('La cuota regular no puede ser negativa.'))
 
     @api.constrains('funding_line_ids')
     def _check_funding_total(self):
@@ -99,11 +97,16 @@ class LenkaFinancialOperation(models.Model):
         self.ensure_one()
         return self.interest_rate / 100.0 if self.rate_period == 'monthly' else self.interest_rate / 1200.0
 
+    def _level_payment(self, principal, monthly_rate, periods):
+        self.ensure_one()
+        if not monthly_rate:
+            return principal / periods
+        return principal * monthly_rate / (1 - (1 + monthly_rate) ** -periods)
+
     def action_generate_schedule(self):
         for rec in self:
             if rec.calculation_method == 'custom':
                 continue
-
             rec.schedule_line_ids.unlink()
             principal = rec.financed_amount
             n = rec.term_months
@@ -111,55 +114,50 @@ class LenkaFinancialOperation(models.Model):
             balance = principal
             payment_date = rec.first_payment_date or fields.Date.add(rec.date, months=1)
             lines = []
-
             if not principal:
                 raise ValidationError(_('El monto financiado debe ser mayor que cero para generar el plan.'))
 
-            # Cuota nivelada: sistema de anualidad. Capital e interes cambian,
-            # pero el total de la cuota se mantiene nivelado salvo ajuste de redondeo final.
-            if rec.calculation_method == 'level':
-                level_payment = (
-                    principal / n
-                    if not monthly_rate
-                    else principal * monthly_rate / (1 - (1 + monthly_rate) ** -n)
-                )
-            else:
-                level_payment = 0.0
-
-            # Interes sobre saldo: capital fijo por periodo + interes calculado
-            # sobre el saldo pendiente. La cuota disminuye conforme baja el saldo.
+            level_payment = rec._level_payment(principal, monthly_rate, n) if rec.calculation_method in ('level', 'balloon') else 0.0
             fixed_capital = principal / n if rec.calculation_method == 'balance' else 0.0
+            extras = {line.installment_number: line.amount for line in rec.extra_payment_line_ids}
+            if rec.calculation_method == 'balloon' and rec.extra_payment_line_ids:
+                invalid = rec.extra_payment_line_ids.filtered(lambda l: l.installment_number > n)
+                if invalid:
+                    raise ValidationError(_('Hay pagos extraordinarios asignados a cuotas fuera del plazo.'))
 
             for number in range(1, n + 1):
+                if balance <= 0:
+                    break
                 interest = balance * monthly_rate
+                extra = extras.get(number, 0.0) if rec.calculation_method == 'balloon' else 0.0
 
                 if rec.calculation_method == 'level':
                     capital = min(max(level_payment - interest, 0.0), balance)
                     if number == n:
                         capital = balance
-                    total = capital + interest
                 elif rec.calculation_method == 'balance':
                     capital = balance if number == n else min(fixed_capital, balance)
-                    total = capital + interest
                 elif rec.calculation_method == 'interest_only':
                     capital = principal if number == n else 0.0
-                    total = interest + capital
                 elif rec.calculation_method == 'balloon':
-                    # Estructura inicial: capital uniforme. Los pagos extraordinarios
-                    # se incorporaran como lineas configurables en el siguiente bloque.
-                    capital = balance if number == n else min(principal / n, balance)
-                    total = capital + interest
+                    regular_payment = rec.balloon_base_payment or level_payment
+                    regular_capital = max(regular_payment - interest, 0.0)
+                    capital = min(regular_capital + extra, balance)
+                    if number == n:
+                        capital = balance
+                    extra = min(extra, capital)
                 else:
                     capital = 0.0
-                    total = interest
 
                 end_balance = max(balance - capital, 0.0)
+                total = capital + interest
                 lines.append((0, 0, {
                     'sequence': number,
                     'date': payment_date,
                     'opening_balance': balance,
                     'capital': capital,
                     'interest': interest,
+                    'extra_charge': extra,
                     'payment': total,
                     'closing_balance': end_balance,
                 }))
@@ -179,6 +177,26 @@ class LenkaFinancialOperation(models.Model):
         return True
 
 
+class LenkaExtraPaymentPlan(models.Model):
+    _name = 'lenka.extra.payment.plan'
+    _description = 'Pago Extraordinario Planificado Lenka'
+    _order = 'installment_number'
+
+    operation_id = fields.Many2one('lenka.financial.operation', required=True, ondelete='cascade')
+    currency_id = fields.Many2one(related='operation_id.currency_id')
+    installment_number = fields.Integer(string='Cuota #', required=True)
+    amount = fields.Monetary(string='Pago extraordinario', required=True)
+    note = fields.Char(string='Descripcion')
+
+    @api.constrains('installment_number', 'amount')
+    def _check_values(self):
+        for rec in self:
+            if rec.installment_number <= 0:
+                raise ValidationError(_('El numero de cuota debe ser mayor que cero.'))
+            if rec.amount <= 0:
+                raise ValidationError(_('El pago extraordinario debe ser mayor que cero.'))
+
+
 class LenkaAmortizationLine(models.Model):
     _name = 'lenka.amortization.line'
     _description = 'Linea de Amortizacion Lenka'
@@ -191,8 +209,8 @@ class LenkaAmortizationLine(models.Model):
     opening_balance = fields.Monetary(string='Saldo inicial')
     capital = fields.Monetary(string='Capital')
     interest = fields.Monetary(string='Interes')
-    extra_charge = fields.Monetary(string='Otros cargos')
-    payment = fields.Monetary(string='Cuota')
+    extra_charge = fields.Monetary(string='Pago extraordinario')
+    payment = fields.Monetary(string='Cuota total')
     closing_balance = fields.Monetary(string='Saldo final')
 
 
