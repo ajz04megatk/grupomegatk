@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="group_lenka_user" model="res.groups">
+        <field name="name">Financiero Lenka - Usuario</field>
+        <field name="category_id" ref="base.module_category_accounting_finance"/>
+    </record>
+
+    <record id="group_lenka_manager" model="res.groups">
+        <field name="name">Financiero Lenka - Gerente</field>
+        <field name="category_id" ref="base.module_category_accounting_finance"/>
+        <field name="implied_ids" eval="[(4, ref('lenka_financiero.group_lenka_user'))]"/>
+    </record>
+</odoo>
