@@ -7,4 +7,11 @@
         <field name="padding">6</field>
         <field name="company_id" eval="False"/>
     </record>
+    <record id="seq_lenka_payment" model="ir.sequence">
+        <field name="name">Cobro Lenka</field>
+        <field name="code">lenka.payment</field>
+        <field name="prefix">LENKA-PAG-</field>
+        <field name="padding">6</field>
+        <field name="company_id" eval="False"/>
+    </record>
 </odoo>
