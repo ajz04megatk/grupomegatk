@@ -1,5 +1,9 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_lenka_operation_user,lenka.operation.user,model_lenka_financial_operation,base.group_user,1,1,1,1
-access_lenka_amortization_user,lenka.amortization.user,model_lenka_amortization_line,base.group_user,1,1,1,1
-access_lenka_funding_user,lenka.funding.user,model_lenka_funding_line,base.group_user,1,1,1,1
-access_lenka_guarantee_user,lenka.guarantee.user,model_lenka_guarantee,base.group_user,1,1,1,1
+access_lenka_operation_user,lenka.operation.user,model_lenka_financial_operation,lenka_financiero.group_lenka_user,1,1,1,0
+access_lenka_amortization_user,lenka.amortization.user,model_lenka_amortization_line,lenka_financiero.group_lenka_user,1,0,0,0
+access_lenka_funding_user,lenka.funding.user,model_lenka_funding_line,lenka_financiero.group_lenka_user,1,1,1,0
+access_lenka_guarantee_user,lenka.guarantee.user,model_lenka_guarantee,lenka_financiero.group_lenka_user,1,1,1,0
+access_lenka_operation_manager,lenka.operation.manager,model_lenka_financial_operation,lenka_financiero.group_lenka_manager,1,1,1,1
+access_lenka_amortization_manager,lenka.amortization.manager,model_lenka_amortization_line,lenka_financiero.group_lenka_manager,1,1,1,1
+access_lenka_funding_manager,lenka.funding.manager,model_lenka_funding_line,lenka_financiero.group_lenka_manager,1,1,1,1
+access_lenka_guarantee_manager,lenka.guarantee.manager,model_lenka_guarantee,lenka_financiero.group_lenka_manager,1,1,1,1
