@@ -14,4 +14,11 @@
         <field name="padding">6</field>
         <field name="company_id" eval="False"/>
     </record>
+    <record id="seq_lenka_disbursement" model="ir.sequence">
+        <field name="name">Desembolso Lenka</field>
+        <field name="code">lenka.disbursement</field>
+        <field name="prefix">LENKA-DES-</field>
+        <field name="padding">6</field>
+        <field name="company_id" eval="False"/>
+    </record>
 </odoo>
