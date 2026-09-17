@@ -12,6 +12,7 @@
         'data/sequence.xml',
         'views/lenka_financial_views.xml',
         'views/lenka_menu.xml',
+        'report/lenka_quote_report.xml',
     ],
     'application': True,
     'installable': True,
