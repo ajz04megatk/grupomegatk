@@ -21,4 +21,11 @@
         <field name="padding">6</field>
         <field name="company_id" eval="False"/>
     </record>
+    <record id="seq_lenka_investment" model="ir.sequence">
+        <field name="name">Inversion / Deposito Lenka</field>
+        <field name="code">lenka.investment</field>
+        <field name="prefix">LENKA-INV-</field>
+        <field name="padding">6</field>
+        <field name="company_id" eval="False"/>
+    </record>
 </odoo>
