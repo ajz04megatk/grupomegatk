@@ -13,19 +13,36 @@ class LenkaPayment(models.Model):
     partner_id = fields.Many2one(related='operation_id.partner_id', store=True, string='Cliente')
     currency_id = fields.Many2one(related='operation_id.currency_id', store=True)
     payment_date = fields.Date(string='Fecha de pago', required=True, default=fields.Date.context_today)
-    amount = fields.Monetary(string='Monto recibido', required=True, tracking=True)
+    amount = fields.Monetary(string='Monto pagado por cliente', required=True, tracking=True)
     payment_method = fields.Selection([
         ('cash', 'Efectivo'), ('transfer', 'Transferencia'), ('check', 'Cheque'),
         ('card', 'Tarjeta'), ('other', 'Otro')
     ], string='Forma de pago', required=True, default='transfer')
     reference = fields.Char(string='Referencia')
     state = fields.Selection([('draft', 'Borrador'), ('posted', 'Aplicado'), ('cancelled', 'Anulado')], default='draft', tracking=True)
+
+    card_fee_rate = fields.Float(string='Comision tarjeta (%)', default=3.5)
+    card_fee_amount = fields.Monetary(string='Cargo bancario / tarjeta', compute='_compute_card_net', store=True)
+    net_bank_amount = fields.Monetary(string='Neto recibido en banco', compute='_compute_card_net', store=True)
+
     late_fee_amount = fields.Monetary(string='Aplicado a mora', readonly=True)
     interest_amount = fields.Monetary(string='Aplicado a interes', readonly=True)
     capital_amount = fields.Monetary(string='Aplicado a capital', readonly=True)
+    extra_capital_amount = fields.Monetary(string='Abono extraordinario a capital', readonly=True)
     unapplied_amount = fields.Monetary(string='Saldo sin aplicar', readonly=True)
     allocation_line_ids = fields.One2many('lenka.payment.allocation', 'payment_id', string='Aplicacion', copy=False, readonly=True)
     notes = fields.Text(string='Observaciones')
+
+    @api.depends('amount', 'payment_method', 'card_fee_rate')
+    def _compute_card_net(self):
+        for rec in self:
+            if rec.payment_method == 'card':
+                rate = max(rec.card_fee_rate, 0.0) / 100.0
+                rec.card_fee_amount = rec.amount * rate
+                rec.net_bank_amount = rec.amount - rec.card_fee_amount
+            else:
+                rec.card_fee_amount = 0.0
+                rec.net_bank_amount = rec.amount
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -34,11 +51,13 @@ class LenkaPayment(models.Model):
                 vals['name'] = self.env['ir.sequence'].next_by_code('lenka.payment') or 'Nuevo'
         return super().create(vals_list)
 
-    @api.constrains('amount')
+    @api.constrains('amount', 'card_fee_rate')
     def _check_amount(self):
         for rec in self:
             if rec.amount <= 0:
                 raise ValidationError(_('El monto recibido debe ser mayor que cero.'))
+            if rec.card_fee_rate < 0 or rec.card_fee_rate > 100:
+                raise ValidationError(_('La comision de tarjeta debe estar entre 0% y 100%.'))
 
     def action_post(self):
         for rec in self:
@@ -46,45 +65,77 @@ class LenkaPayment(models.Model):
                 continue
             if not rec.operation_id.schedule_line_ids:
                 raise ValidationError(_('La operacion no tiene tabla de amortizacion.'))
+
             remaining = rec.amount
             allocations = []
             late_total = interest_total = capital_total = 0.0
 
-            for line in rec.operation_id.schedule_line_ids.sorted(key=lambda l: (l.date, l.sequence)):
+            # 1) Se pagan solamente intereses exigibles a la fecha del pago.
+            # Nunca se anticipan intereses de cuotas futuras.
+            due_lines = rec.operation_id.schedule_line_ids.filtered(
+                lambda l: l.date and l.date <= rec.payment_date
+            ).sorted(key=lambda l: (l.date, l.sequence))
+
+            for line in due_lines:
+                if remaining <= 0:
+                    break
+                due_interest = max(line.interest - line.interest_paid, 0.0)
+                if due_interest <= 0:
+                    continue
+                pay_interest = min(remaining, due_interest)
+                remaining -= pay_interest
+                line.interest_paid += pay_interest
+                interest_total += pay_interest
+                allocations.append((0, 0, {
+                    'schedule_line_id': line.id,
+                    'interest_amount': pay_interest,
+                }))
+
+            # 2) La mora es un cargo independiente y solo se paga si ya fue generada.
+            for line in due_lines:
                 if remaining <= 0:
                     break
                 due_late = max(line.late_fee_due - line.late_fee_paid, 0.0)
-                due_interest = max(line.interest - line.interest_paid, 0.0)
-                due_capital = max(line.capital - line.capital_paid, 0.0)
-                if due_late <= 0 and due_interest <= 0 and due_capital <= 0:
+                if due_late <= 0:
                     continue
-
                 pay_late = min(remaining, due_late)
                 remaining -= pay_late
-                pay_interest = min(remaining, due_interest)
-                remaining -= pay_interest
-                pay_capital = min(remaining, due_capital)
-                remaining -= pay_capital
-
-                line.write({
-                    'late_fee_paid': line.late_fee_paid + pay_late,
-                    'interest_paid': line.interest_paid + pay_interest,
-                    'capital_paid': line.capital_paid + pay_capital,
-                })
+                line.late_fee_paid += pay_late
                 late_total += pay_late
-                interest_total += pay_interest
-                capital_total += pay_capital
                 allocations.append((0, 0, {
                     'schedule_line_id': line.id,
                     'late_fee_amount': pay_late,
-                    'interest_amount': pay_interest,
+                }))
+
+            # 3) Se cubre el capital exigible de las cuotas vencidas/a la fecha.
+            for line in due_lines:
+                if remaining <= 0:
+                    break
+                due_capital = max(line.capital - line.capital_paid, 0.0)
+                if due_capital <= 0:
+                    continue
+                pay_capital = min(remaining, due_capital)
+                remaining -= pay_capital
+                line.capital_paid += pay_capital
+                capital_total += pay_capital
+                allocations.append((0, 0, {
+                    'schedule_line_id': line.id,
                     'capital_amount': pay_capital,
                 }))
+
+            # 4) Todo excedente, despues de intereses/cargos exigibles, va a capital.
+            # No se usa para pagar intereses futuros.
+            outstanding_after_due = max(rec.operation_id.financed_amount - rec.operation_id.paid_capital - capital_total, 0.0)
+            extra_capital = min(remaining, outstanding_after_due)
+            remaining -= extra_capital
+            if extra_capital:
+                capital_total += extra_capital
 
             rec.write({
                 'late_fee_amount': late_total,
                 'interest_amount': interest_total,
                 'capital_amount': capital_total,
+                'extra_capital_amount': extra_capital,
                 'unapplied_amount': remaining,
                 'allocation_line_ids': allocations,
                 'state': 'posted',
@@ -128,14 +179,24 @@ class LenkaFinancialOperationPaymentMixin(models.Model):
     paid_capital = fields.Monetary(string='Capital pagado', compute='_compute_collection_totals')
     paid_interest = fields.Monetary(string='Interes pagado', compute='_compute_collection_totals')
     paid_late_fees = fields.Monetary(string='Mora pagada', compute='_compute_collection_totals')
+    paid_card_fees = fields.Monetary(string='Comisiones de tarjeta', compute='_compute_collection_totals')
+    net_collections = fields.Monetary(string='Neto recibido', compute='_compute_collection_totals')
     outstanding_capital = fields.Monetary(string='Capital pendiente', compute='_compute_collection_totals')
 
-    @api.depends('schedule_line_ids.capital_paid', 'schedule_line_ids.interest_paid', 'schedule_line_ids.late_fee_paid')
+    @api.depends(
+        'schedule_line_ids.capital_paid', 'schedule_line_ids.interest_paid', 'schedule_line_ids.late_fee_paid',
+        'payment_ids.state', 'payment_ids.extra_capital_amount', 'payment_ids.card_fee_amount', 'payment_ids.net_bank_amount'
+    )
     def _compute_collection_totals(self):
         for rec in self:
-            rec.paid_capital = sum(rec.schedule_line_ids.mapped('capital_paid'))
+            posted = rec.payment_ids.filtered(lambda p: p.state == 'posted')
+            scheduled_capital = sum(rec.schedule_line_ids.mapped('capital_paid'))
+            extra_capital = sum(posted.mapped('extra_capital_amount'))
+            rec.paid_capital = scheduled_capital + extra_capital
             rec.paid_interest = sum(rec.schedule_line_ids.mapped('interest_paid'))
             rec.paid_late_fees = sum(rec.schedule_line_ids.mapped('late_fee_paid'))
+            rec.paid_card_fees = sum(posted.mapped('card_fee_amount'))
+            rec.net_collections = sum(posted.mapped('net_bank_amount'))
             rec.outstanding_capital = max(rec.financed_amount - rec.paid_capital, 0.0)
 
     def action_update_late_fees(self):
@@ -152,7 +213,11 @@ class LenkaFinancialOperationPaymentMixin(models.Model):
 
     def get_payoff_amount(self):
         self.ensure_one()
-        pending_interest = sum(max(l.interest - l.interest_paid, 0.0) for l in self.schedule_line_ids)
+        today = fields.Date.context_today(self)
+        pending_interest = sum(
+            max(l.interest - l.interest_paid, 0.0)
+            for l in self.schedule_line_ids if l.date and l.date <= today
+        )
         pending_late = sum(max(l.late_fee_due - l.late_fee_paid, 0.0) for l in self.schedule_line_ids)
         return self.outstanding_capital + pending_interest + pending_late
 
