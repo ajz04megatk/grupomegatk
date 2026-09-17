@@ -1,4 +1,5 @@
 from odoo.tests.common import TransactionCase
+from odoo.exceptions import ValidationError
 
 
 class TestLenkaFinancialOperation(TransactionCase):
@@ -72,3 +73,37 @@ class TestLenkaFinancialOperation(TransactionCase):
         self.assertAlmostEqual(operation.financed_amount, 80000.0, places=2)
         operation.action_generate_schedule()
         self.assertAlmostEqual(sum(operation.schedule_line_ids.mapped('capital')), 80000.0, places=2)
+
+    def test_balloon_extra_payment_reduces_future_interest(self):
+        normal = self._operation('level')
+        normal.action_generate_schedule()
+        normal_lines = normal.schedule_line_ids.sorted('sequence')
+
+        balloon = self._operation('balloon')
+        balloon.write({
+            'balloon_base_payment': normal_lines[0].payment,
+            'extra_payment_line_ids': [(0, 0, {
+                'installment_number': 6,
+                'amount': 20000.0,
+                'note': 'Cuota bomba mes 6',
+            })],
+        })
+        balloon.action_generate_schedule()
+        balloon_lines = balloon.schedule_line_ids.sorted('sequence')
+
+        sixth = balloon_lines.filtered(lambda l: l.sequence == 6)
+        seventh = balloon_lines.filtered(lambda l: l.sequence == 7)
+        self.assertAlmostEqual(sixth.extra_charge, 20000.0, places=2)
+        self.assertLess(seventh.interest, normal_lines[6].interest)
+        self.assertAlmostEqual(balloon_lines[-1].closing_balance, 0.0, places=2)
+
+    def test_balloon_payment_outside_term_is_rejected(self):
+        operation = self._operation('balloon', term=12)
+        operation.write({
+            'extra_payment_line_ids': [(0, 0, {
+                'installment_number': 13,
+                'amount': 5000.0,
+            })],
+        })
+        with self.assertRaises(ValidationError):
+            operation.action_generate_schedule()
