@@ -6,3 +6,4 @@ from . import accounting
 from . import investment
 from . import investment_accounting
 from . import statement
+from . import alerts
