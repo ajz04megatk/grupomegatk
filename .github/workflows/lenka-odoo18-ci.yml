@@ -62,10 +62,15 @@ jobs:
           python -m pip install --upgrade pip wheel
           pip install -r odoo/requirements.txt
 
+      - name: Prepare isolated Lenka addons path
+        run: |
+          mkdir -p custom_addons
+          cp -R lenka_financiero custom_addons/lenka_financiero
+
       - name: Install Lenka module in Odoo 18
         run: |
-          python odoo/odoo-bin             --db_host=127.0.0.1             --db_port=5432             --db_user=odoo             --db_password=odoo             --addons-path=odoo/addons,.             -d lenka_test             -i lenka_financiero             --without-demo=all             --stop-after-init             --log-level=test
+          python odoo/odoo-bin             --db_host=127.0.0.1             --db_port=5432             --db_user=odoo             --db_password=odoo             --addons-path=odoo/addons,custom_addons             -d lenka_test             -i lenka_financiero             --without-demo=all             --stop-after-init             --log-level=test
 
       - name: Run Lenka tests
         run: |
-          python odoo/odoo-bin             --db_host=127.0.0.1             --db_port=5432             --db_user=odoo             --db_password=odoo             --addons-path=odoo/addons,.             -d lenka_test             -u lenka_financiero             --without-demo=all             --test-enable             --test-tags=/lenka_financiero             --stop-after-init             --log-level=test
+          python odoo/odoo-bin             --db_host=127.0.0.1             --db_port=5432             --db_user=odoo             --db_password=odoo             --addons-path=odoo/addons,custom_addons             -d lenka_test             -u lenka_financiero             --without-demo=all             --test-enable             --test-tags=/lenka_financiero             --stop-after-init             --log-level=test
