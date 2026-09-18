@@ -10,3 +10,4 @@ from . import alerts
 from . import profitability
 from . import funding_cost
 from . import contract
+from . import mobile_service
