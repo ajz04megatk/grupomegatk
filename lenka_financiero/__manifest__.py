@@ -22,6 +22,7 @@
         'views/profitability_views.xml',
         'views/funding_cost_views.xml',
         'views/contract_views.xml',
+        'views/mobile_access_views.xml',
         'views/lenka_menu.xml',
         'report/lenka_quote_report.xml',
         'report/lenka_statement_report.xml',
