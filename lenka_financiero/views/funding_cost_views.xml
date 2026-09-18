@@ -26,6 +26,8 @@
                 <header>
                     <button name="action_post" string="Aplicar" type="object" class="btn-primary" invisible="state != 'draft'"/>
                     <button name="action_cancel" string="Anular" type="object" invisible="state == 'cancelled'"/>
+                    <button name="action_create_account_move" string="Crear borrador contable" type="object" invisible="state != 'posted' or move_id"/>
+                    <button name="action_open_account_move" string="Abrir borrador contable" type="object" invisible="not move_id"/>
                     <field name="state" widget="statusbar" statusbar_visible="draft,posted,cancelled"/>
                 </header>
                 <sheet>
@@ -42,6 +44,7 @@
                             <field name="currency_id" readonly="1"/>
                             <field name="amount"/>
                             <field name="reference"/>
+                            <field name="journal_id"/>
                             <field name="move_id" readonly="1"/>
                         </group>
                     </group>
