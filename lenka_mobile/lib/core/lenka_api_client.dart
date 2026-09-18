@@ -63,9 +63,19 @@ class LenkaApiClient {
     return List<dynamic>.from(result as List);
   }
 
+  Future<Map<String, dynamic>> operationDetail(int id) async {
+    final result = await _rpc('/lenka/mobile/v1/operations/' + id.toString());
+    return Map<String, dynamic>.from(result as Map);
+  }
+
   Future<List<dynamic>> investments() async {
     final result = await _rpc('/lenka/mobile/v1/investments');
     return List<dynamic>.from(result as List);
+  }
+
+  Future<Map<String, dynamic>> investmentDetail(int id) async {
+    final result = await _rpc('/lenka/mobile/v1/investments/' + id.toString());
+    return Map<String, dynamic>.from(result as Map);
   }
 
   Future<List<dynamic>> statements() async {
