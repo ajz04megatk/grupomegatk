@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../core/lenka_api_client.dart';
+import 'operations_screen.dart';
+import 'investments_screen.dart';
+import 'statements_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key, required this.api, required this.onLogout});
@@ -50,9 +53,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 'Interes acumulado: ' + money(inv['accrued_interest']),
               ]),
               const SizedBox(height: 22),
-              const ListTile(leading: Icon(Icons.calendar_month_outlined), title: Text('Cuotas y vencimientos')),
-              const ListTile(leading: Icon(Icons.trending_up), title: Text('Detalle de inversiones e intereses')),
-              const ListTile(leading: Icon(Icons.receipt_long_outlined), title: Text('Estados de cuenta')),
+              ListTile(leading: const Icon(Icons.calendar_month_outlined), title: const Text('Prestamos, cuotas y vencimientos'), trailing: const Icon(Icons.chevron_right), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => OperationsScreen(api: widget.api)))),
+              ListTile(leading: const Icon(Icons.trending_up), title: const Text('Inversiones e intereses'), trailing: const Icon(Icons.chevron_right), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => InvestmentsScreen(api: widget.api)))),
+              ListTile(leading: const Icon(Icons.receipt_long_outlined), title: const Text('Estados de cuenta'), trailing: const Icon(Icons.chevron_right), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => StatementsScreen(api: widget.api)))),
             ]),
           );
         },
