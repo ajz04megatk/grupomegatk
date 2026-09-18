@@ -8,3 +8,4 @@ from . import investment_accounting
 from . import statement
 from . import alerts
 from . import profitability
+from . import funding_cost
