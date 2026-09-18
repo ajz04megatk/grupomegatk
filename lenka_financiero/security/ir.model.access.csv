@@ -23,3 +23,7 @@ access_lenka_disbursement_manager,lenka.disbursement.manager,model_lenka_disburs
 access_lenka_investment_manager,lenka.investment.manager,model_lenka_investment,lenka_financiero.group_lenka_manager,1,1,1,1
 access_lenka_investment_interest_manager,lenka.investment.interest.manager,model_lenka_investment_interest,lenka_financiero.group_lenka_manager,1,1,1,1
 access_lenka_investment_withdrawal_manager,lenka.investment.withdrawal.manager,model_lenka_investment_withdrawal,lenka_financiero.group_lenka_manager,1,1,1,1
+access_lenka_statement_user,lenka.statement.user,model_lenka_statement,lenka_financiero.group_lenka_user,1,1,1,0
+access_lenka_statement_line_user,lenka.statement.line.user,model_lenka_statement_line,lenka_financiero.group_lenka_user,1,0,0,0
+access_lenka_statement_manager,lenka.statement.manager,model_lenka_statement,lenka_financiero.group_lenka_manager,1,1,1,1
+access_lenka_statement_line_manager,lenka.statement.line.manager,model_lenka_statement_line,lenka_financiero.group_lenka_manager,1,1,1,1
