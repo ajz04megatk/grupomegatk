@@ -11,6 +11,7 @@ class ResCompanyLenkaAccounting(models.Model):
     lenka_interest_income_account_id = fields.Many2one('account.account', string='Lenka: Ingreso por intereses')
     lenka_late_fee_income_account_id = fields.Many2one('account.account', string='Lenka: Ingreso por mora')
     lenka_unapplied_account_id = fields.Many2one('account.account', string='Lenka: Cobros no aplicados / anticipos')
+    lenka_funding_cost_expense_account_id = fields.Many2one('account.account', string='Lenka: Gasto por costo de fondeo')
 
 
 class ResConfigSettingsLenkaAccounting(models.TransientModel):
@@ -22,6 +23,7 @@ class ResConfigSettingsLenkaAccounting(models.TransientModel):
     lenka_interest_income_account_id = fields.Many2one(related='company_id.lenka_interest_income_account_id', readonly=False)
     lenka_late_fee_income_account_id = fields.Many2one(related='company_id.lenka_late_fee_income_account_id', readonly=False)
     lenka_unapplied_account_id = fields.Many2one(related='company_id.lenka_unapplied_account_id', readonly=False)
+    lenka_funding_cost_expense_account_id = fields.Many2one(related='company_id.lenka_funding_cost_expense_account_id', readonly=False)
 
 
 class LenkaDisbursementAccounting(models.Model):
