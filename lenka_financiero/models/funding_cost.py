@@ -116,3 +116,69 @@ class LenkaFinancialOperationActualFundingCost(models.Model):
                 - rec.realized_card_fees
                 - rec.realized_funding_cost
             )
+
+
+class LenkaFundingCostAccounting(models.Model):
+    _inherit = 'lenka.funding.cost'
+
+    journal_id = fields.Many2one('account.journal', string='Diario de pago / costo')
+
+    def action_create_account_move(self):
+        for rec in self:
+            if rec.state != 'posted':
+                raise ValidationError(_('El costo de fondeo debe estar aplicado antes de crear la partida contable.'))
+            if rec.move_id:
+                continue
+            company = rec.company_id
+            journal = rec.journal_id
+            expense = company.lenka_funding_cost_expense_account_id
+            if not journal or not expense:
+                raise ValidationError(_('Configure el diario del costo y la cuenta de gasto por costo de fondeo.'))
+            if journal.company_id != company:
+                raise ValidationError(_('El diario debe pertenecer a la misma empresa de la operacion.'))
+            counterpart = journal.default_account_id
+            if not counterpart:
+                raise ValidationError(_('El diario seleccionado debe tener una cuenta contable por defecto.'))
+
+            amount_company = rec.currency_id._convert(rec.amount, company.currency_id, company, rec.date)
+            move = self.env['account.move'].with_company(company).create({
+                'move_type': 'entry',
+                'date': rec.date,
+                'journal_id': journal.id,
+                'ref': '%s - %s' % (rec.operation_id.name, rec.name),
+                'line_ids': [
+                    (0, 0, {
+                        'name': _('Costo de fondeo - %s') % rec.name,
+                        'partner_id': rec.partner_id.id if rec.partner_id else False,
+                        'account_id': expense.id,
+                        'debit': amount_company,
+                        'credit': 0.0,
+                        'currency_id': rec.currency_id.id if rec.currency_id != company.currency_id else False,
+                        'amount_currency': rec.amount if rec.currency_id != company.currency_id else 0.0,
+                    }),
+                    (0, 0, {
+                        'name': _('Pago / obligacion costo de fondeo - %s') % rec.name,
+                        'partner_id': rec.partner_id.id if rec.partner_id else False,
+                        'account_id': counterpart.id,
+                        'debit': 0.0,
+                        'credit': amount_company,
+                        'currency_id': rec.currency_id.id if rec.currency_id != company.currency_id else False,
+                        'amount_currency': -rec.amount if rec.currency_id != company.currency_id else 0.0,
+                    }),
+                ],
+            })
+            rec.move_id = move.id
+        return True
+
+    def action_open_account_move(self):
+        self.ensure_one()
+        if not self.move_id:
+            raise ValidationError(_('Este costo de fondeo aun no tiene borrador contable.'))
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('Borrador contable'),
+            'res_model': 'account.move',
+            'view_mode': 'form',
+            'res_id': self.move_id.id,
+            'target': 'current',
+        }
