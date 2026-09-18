@@ -7,4 +7,5 @@
     <menuitem id="menu_lenka_disbursements" name="Desembolsos" parent="menu_lenka_root" action="action_lenka_disbursements" sequence="40"/>
     <menuitem id="menu_lenka_investments" name="Inversionistas / Depositantes" parent="menu_lenka_root" action="action_lenka_investments" sequence="50"/>
     <menuitem id="menu_lenka_withdrawals" name="Retiros de inversionistas" parent="menu_lenka_root" action="action_lenka_withdrawals" sequence="60"/>
+    <menuitem id="menu_lenka_statements" name="Estados de cuenta" parent="menu_lenka_root" action="action_lenka_statements" sequence="70"/>
 </odoo>
