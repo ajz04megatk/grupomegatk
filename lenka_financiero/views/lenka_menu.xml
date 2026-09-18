@@ -8,4 +8,7 @@
     <menuitem id="menu_lenka_investments" name="Inversionistas / Depositantes" parent="menu_lenka_root" action="action_lenka_investments" sequence="50"/>
     <menuitem id="menu_lenka_withdrawals" name="Retiros de inversionistas" parent="menu_lenka_root" action="action_lenka_withdrawals" sequence="60"/>
     <menuitem id="menu_lenka_statements" name="Estados de cuenta" parent="menu_lenka_root" action="action_lenka_statements" sequence="70"/>
+    <menuitem id="menu_lenka_reports" name="Reportes gerenciales" parent="menu_lenka_root" sequence="80"/>
+    <menuitem id="menu_lenka_portfolio_management" name="Cartera financiera" parent="menu_lenka_reports" action="action_lenka_portfolio_management" sequence="10"/>
+    <menuitem id="menu_lenka_investment_management" name="Obligaciones con inversionistas" parent="menu_lenka_reports" action="action_lenka_investment_management" sequence="20"/>
 </odoo>
