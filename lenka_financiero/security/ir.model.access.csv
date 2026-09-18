@@ -29,3 +29,7 @@ access_lenka_statement_manager,lenka.statement.manager,model_lenka_statement,len
 access_lenka_statement_line_manager,lenka.statement.line.manager,model_lenka_statement_line,lenka_financiero.group_lenka_manager,1,1,1,1
 access_lenka_funding_cost_user,lenka.funding.cost.user,model_lenka_funding_cost,lenka_financiero.group_lenka_user,1,1,1,0
 access_lenka_funding_cost_manager,lenka.funding.cost.manager,model_lenka_funding_cost,lenka_financiero.group_lenka_manager,1,1,1,1
+access_lenka_contract_template_user,lenka.contract.template.user,model_lenka_contract_template,lenka_financiero.group_lenka_user,1,0,0,0
+access_lenka_contract_template_manager,lenka.contract.template.manager,model_lenka_contract_template,lenka_financiero.group_lenka_manager,1,1,1,1
+access_lenka_generated_document_user,lenka.generated.document.user,model_lenka_generated_document,lenka_financiero.group_lenka_user,1,1,1,0
+access_lenka_generated_document_manager,lenka.generated.document.manager,model_lenka_generated_document,lenka_financiero.group_lenka_manager,1,1,1,1
