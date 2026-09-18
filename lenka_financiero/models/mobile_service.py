@@ -22,16 +22,16 @@ class LenkaMobileService(models.AbstractModel):
     @api.model
     def get_my_dashboard(self):
         partner = self._current_partner()
-        operations = self.env['lenka.financial.operation'].search([
+        operations = self.env['lenka.financial.operation'].sudo().search([
             ('partner_id', 'child_of', partner.id),
             ('is_quote', '=', False),
             ('state', 'in', ('approved', 'contracted', 'active', 'done')),
         ])
-        investments = self.env['lenka.investment'].search([
+        investments = self.env['lenka.investment'].sudo().search([
             ('partner_id', 'child_of', partner.id),
             ('state', 'in', ('active', 'matured', 'closed')),
         ])
-        statements = self.env['lenka.statement'].search([
+        statements = self.env['lenka.statement'].sudo().search([
             ('partner_id', 'child_of', partner.id),
             ('state', 'in', ('generated', 'sent')),
         ], order='date_to desc', limit=5)
@@ -69,7 +69,7 @@ class LenkaMobileService(models.AbstractModel):
     @api.model
     def get_my_operations(self):
         partner = self._current_partner()
-        operations = self.env['lenka.financial.operation'].search([
+        operations = self.env['lenka.financial.operation'].sudo().search([
             ('partner_id', 'child_of', partner.id),
             ('is_quote', '=', False),
             ('state', 'not in', ('draft', 'review', 'rejected', 'cancelled')),
@@ -104,7 +104,7 @@ class LenkaMobileService(models.AbstractModel):
     @api.model
     def get_my_operation_detail(self, operation_id):
         partner = self._current_partner()
-        operation = self.env['lenka.financial.operation'].search([
+        operation = self.env['lenka.financial.operation'].sudo().search([
             ('id', '=', int(operation_id)),
             ('partner_id', 'child_of', partner.id),
             ('is_quote', '=', False),
@@ -153,7 +153,7 @@ class LenkaMobileService(models.AbstractModel):
     @api.model
     def get_my_investments(self):
         partner = self._current_partner()
-        investments = self.env['lenka.investment'].search([
+        investments = self.env['lenka.investment'].sudo().search([
             ('partner_id', 'child_of', partner.id),
             ('state', 'not in', ('draft', 'cancelled')),
         ], order='start_date desc, id desc')
@@ -178,7 +178,7 @@ class LenkaMobileService(models.AbstractModel):
     @api.model
     def get_my_investment_detail(self, investment_id):
         partner = self._current_partner()
-        investment = self.env['lenka.investment'].search([
+        investment = self.env['lenka.investment'].sudo().search([
             ('id', '=', int(investment_id)),
             ('partner_id', 'child_of', partner.id),
         ], limit=1)
@@ -219,7 +219,7 @@ class LenkaMobileService(models.AbstractModel):
     @api.model
     def get_my_statements(self):
         partner = self._current_partner()
-        statements = self.env['lenka.statement'].search([
+        statements = self.env['lenka.statement'].sudo().search([
             ('partner_id', 'child_of', partner.id),
             ('state', 'in', ('generated', 'sent')),
         ], order='date_to desc, id desc')
