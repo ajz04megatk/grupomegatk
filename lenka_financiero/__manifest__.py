@@ -19,6 +19,7 @@
         'views/investment_views.xml',
         'views/statement_views.xml',
         'views/management_views.xml',
+        'views/profitability_views.xml',
         'views/lenka_menu.xml',
         'report/lenka_quote_report.xml',
         'report/lenka_statement_report.xml',
