@@ -1,51 +1,39 @@
 import 'package:flutter/material.dart';
 
-void main() => runApp(const LenkaApp());
+import 'core/lenka_api_client.dart';
+import 'screens/dashboard_screen.dart';
+import 'screens/login_screen.dart';
 
-class LenkaApp extends StatelessWidget {
+void main() { WidgetsFlutterBinding.ensureInitialized(); runApp(const LenkaApp()); }
+
+class LenkaApp extends StatefulWidget {
   const LenkaApp({super.key});
+  @override
+  State<LenkaApp> createState() => _LenkaAppState();
+}
+
+class _LenkaAppState extends State<LenkaApp> {
+  final api = LenkaApiClient(
+    baseUrl: const String.fromEnvironment('LENKA_ODOO_URL', defaultValue: 'https://example.odoo.com'),
+    database: const String.fromEnvironment('LENKA_ODOO_DB', defaultValue: 'odoo'),
+  );
+  bool? loggedIn;
+
+  @override
+  void initState() { super.initState(); restore(); }
+  Future<void> restore() async { final value = await api.hasSession(); if (mounted) setState(() => loggedIn = value); }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Inversiones Lenka',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF7DB8E6)),
-        useMaterial3: true,
-      ),
-      home: const LenkaWelcomeScreen(),
-    );
-  }
-}
-
-class LenkaWelcomeScreen extends StatelessWidget {
-  const LenkaWelcomeScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.account_balance, size: 80),
-                const SizedBox(height: 20),
-                Text('Inversiones Lenka',
-                    style: Theme.of(context).textTheme.headlineMedium),
-                const SizedBox(height: 8),
-                const Text(
-                  'Tus préstamos, inversiones, intereses y estados de cuenta en un solo lugar.',
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF7DB8E6)), useMaterial3: true),
+      home: loggedIn == null
+          ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+          : loggedIn!
+              ? DashboardScreen(api: api, onLogout: () => setState(() => loggedIn = false))
+              : LoginScreen(api: api, onLoggedIn: () => setState(() => loggedIn = true)),
     );
   }
 }
