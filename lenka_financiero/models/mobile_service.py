@@ -12,7 +12,12 @@ class LenkaMobileService(models.AbstractModel):
         partner = user.partner_id
         if not partner:
             raise AccessError(_('El usuario autenticado no tiene un contacto asociado.'))
-        return partner.commercial_partner_id
+        commercial_partner = partner.commercial_partner_id
+        if not user.has_group('lenka_financiero.group_lenka_mobile_client'):
+            raise AccessError(_('El usuario no tiene habilitado el acceso a la app Financiero Lenka.'))
+        if not commercial_partner.lenka_mobile_enabled:
+            raise AccessError(_('El acceso movil de este cliente esta deshabilitado.'))
+        return commercial_partner
 
     @api.model
     def _partner_domain(self, field_name='partner_id'):
