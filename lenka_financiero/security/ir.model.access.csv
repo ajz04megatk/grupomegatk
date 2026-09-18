@@ -27,3 +27,5 @@ access_lenka_statement_user,lenka.statement.user,model_lenka_statement,lenka_fin
 access_lenka_statement_line_user,lenka.statement.line.user,model_lenka_statement_line,lenka_financiero.group_lenka_user,1,0,0,0
 access_lenka_statement_manager,lenka.statement.manager,model_lenka_statement,lenka_financiero.group_lenka_manager,1,1,1,1
 access_lenka_statement_line_manager,lenka.statement.line.manager,model_lenka_statement_line,lenka_financiero.group_lenka_manager,1,1,1,1
+access_lenka_funding_cost_user,lenka.funding.cost.user,model_lenka_funding_cost,lenka_financiero.group_lenka_user,1,1,1,0
+access_lenka_funding_cost_manager,lenka.funding.cost.manager,model_lenka_funding_cost,lenka_financiero.group_lenka_manager,1,1,1,1
