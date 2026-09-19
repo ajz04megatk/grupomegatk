@@ -133,32 +133,39 @@ class LenkaFinancialOperation(models.Model):
                 if invalid:
                     raise ValidationError(_('Hay pagos extraordinarios asignados a cuotas fuera del plazo.'))
 
+            rounding = rec.currency_id.round if rec.currency_id else (lambda value: value)
+
             for number in range(1, n + 1):
+                balance = rounding(balance)
                 if balance <= 0:
                     break
-                interest = balance * monthly_rate
-                extra = extras.get(number, 0.0) if rec.calculation_method == 'balloon' else 0.0
+                interest = rounding(balance * monthly_rate)
+                extra = rounding(extras.get(number, 0.0)) if rec.calculation_method == 'balloon' else 0.0
 
                 if rec.calculation_method == 'level':
-                    capital = min(max(level_payment - interest, 0.0), balance)
+                    capital = rounding(min(max(level_payment - interest, 0.0), balance))
                     if number == n:
                         capital = balance
                 elif rec.calculation_method == 'balance':
-                    capital = balance if number == n else min(fixed_capital, balance)
+                    capital = balance if number == n else rounding(min(fixed_capital, balance))
                 elif rec.calculation_method == 'interest_only':
-                    capital = principal if number == n else 0.0
+                    capital = balance if number == n else 0.0
                 elif rec.calculation_method == 'balloon':
                     regular_payment = rec.balloon_base_payment or level_payment
-                    regular_capital = max(regular_payment - interest, 0.0)
-                    capital = min(regular_capital + extra, balance)
+                    regular_capital = rounding(max(regular_payment - interest, 0.0))
+                    capital = rounding(min(regular_capital + extra, balance))
                     if number == n:
                         capital = balance
-                    extra = min(extra, capital)
+                    extra = rounding(min(extra, capital))
                 else:
                     capital = 0.0
 
-                end_balance = max(balance - capital, 0.0)
-                total = capital + interest
+                capital = rounding(capital)
+                end_balance = rounding(max(balance - capital, 0.0))
+                if number == n and end_balance:
+                    capital = rounding(capital + end_balance)
+                    end_balance = 0.0
+                total = rounding(capital + interest)
                 lines.append((0, 0, {
                     'sequence': number,
                     'date': payment_date,
