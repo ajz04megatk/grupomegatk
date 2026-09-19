@@ -55,7 +55,8 @@ class LenkaFinancialOperation(models.Model):
     @api.depends('principal_amount', 'down_payment')
     def _compute_financed_amount(self):
         for rec in self:
-            rec.financed_amount = max(rec.principal_amount - rec.down_payment, 0.0)
+            amount = max(rec.principal_amount - rec.down_payment, 0.0)
+            rec.financed_amount = rec.currency_id.round(amount) if rec.currency_id else amount
 
     @api.depends('principal_amount', 'residual_purchase_percent')
     def _compute_residual_purchase_amount(self):
