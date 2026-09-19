@@ -66,11 +66,11 @@
         <field name="model">lenka.financial.operation</field>
         <field name="inherit_id" ref="lenka_financiero.view_lenka_operation_form_profitability"/>
         <field name="arch" type="xml">
-            <xpath expr="//group[@string='Resultado realizado']" position="inside">
+            <xpath expr="//group[@name='realized_result']" position="inside">
                 <field name="realized_funding_cost" readonly="1"/>
                 <field name="realized_net_financial_margin" readonly="1"/>
             </xpath>
-            <xpath expr="//page[@string='Fondeo']" position="after">
+            <xpath expr="//page[@name='funding']" position="after">
                 <page string="Costos reales de fondeo">
                     <field name="funding_cost_ids" readonly="1">
                         <list>
