@@ -1,3 +1,5 @@
+from decimal import Decimal, ROUND_HALF_UP
+
 from odoo import api, fields, models, _
 from odoo.exceptions import ValidationError
 
@@ -55,8 +57,13 @@ class LenkaFinancialOperation(models.Model):
     @api.depends('principal_amount', 'down_payment')
     def _compute_financed_amount(self):
         for rec in self:
-            amount = max(rec.principal_amount - rec.down_payment, 0.0)
-            rec.financed_amount = rec.currency_id.round(amount) if rec.currency_id else amount
+            principal = Decimal(str(rec.principal_amount or 0.0))
+            down_payment = Decimal(str(rec.down_payment or 0.0))
+            amount = max(principal - down_payment, Decimal('0'))
+            if rec.currency_id:
+                quantum = Decimal(str(rec.currency_id.rounding or 0.01))
+                amount = amount.quantize(quantum, rounding=ROUND_HALF_UP)
+            rec.financed_amount = float(amount)
 
     @api.depends('principal_amount', 'residual_purchase_percent')
     def _compute_residual_purchase_amount(self):
