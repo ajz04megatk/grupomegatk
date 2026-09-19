@@ -70,7 +70,18 @@ class TestLenkaFinancialOperation(TransactionCase):
             'term_months': 12,
             'calculation_method': 'level',
         })
-        self.assertAlmostEqual(operation.financed_amount, 80000.0, places=2)
+        self.assertAlmostEqual(
+            operation.financed_amount,
+            80000.0,
+            places=2,
+            msg=(
+                f"principal={operation.principal_amount!r}, "
+                f"prima={operation.down_payment!r}, "
+                f"financiado={operation.financed_amount!r}, "
+                f"moneda={operation.currency_id.name}, "
+                f"redondeo={operation.currency_id.rounding!r}"
+            ),
+        )
         operation.action_generate_schedule()
         self.assertAlmostEqual(sum(operation.schedule_line_ids.mapped('capital')), 80000.0, places=2)
 
