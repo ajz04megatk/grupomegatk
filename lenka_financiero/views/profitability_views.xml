@@ -5,12 +5,12 @@
         <field name="model">lenka.financial.operation</field>
         <field name="inherit_id" ref="lenka_financiero.view_lenka_operation_form"/>
         <field name="arch" type="xml">
-            <xpath expr="//page[@string='Fondeo']/field[@name='funding_line_ids']/list/field[@name='cost_period']" position="after">
+            <xpath expr="//field[@name='funding_line_ids']/list/field[@name='cost_period']" position="after">
                 <field name="funding_share" readonly="1"/>
                 <field name="monthly_cost_rate" readonly="1"/>
                 <field name="projected_cost" readonly="1"/>
             </xpath>
-            <xpath expr="//page[@string='Fondeo']/field[@name='funding_line_ids']" position="after">
+            <xpath expr="//field[@name='funding_line_ids']" position="after">
                 <group string="Resumen de fondeo y rentabilidad">
                     <group>
                         <field name="funding_total" readonly="1"/>
