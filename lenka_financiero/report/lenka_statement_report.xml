@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="action_report_lenka_statement" model="ir.actions.report">
+        <field name="name">Estado de Cuenta Lenka</field>
+        <field name="model">lenka.statement</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">lenka_financiero.report_lenka_statement_document</field>
+        <field name="report_file">lenka_financiero.report_lenka_statement_document</field>
+        <field name="binding_model_id" ref="model_lenka_statement"/>
+        <field name="binding_type">report</field>
+        <field name="print_report_name">'Estado de Cuenta - %s' % (object.name)</field>
+    </record>
+
+    <template id="report_lenka_statement_document">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="o">
+                <t t-call="web.external_layout">
+                    <div class="page">
+                        <h2>Estado de Cuenta - Inversiones Lenka</h2>
+                        <p><strong>Cliente:</strong> <span t-field="o.partner_id"/></p>
+                        <p><strong>Periodo:</strong> <span t-field="o.date_from"/> al <span t-field="o.date_to"/></p>
+                        <p><strong>Moneda:</strong> <span t-field="o.currency_id"/></p>
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th><th>Descripcion</th><th>Referencia</th>
+                                    <th class="text-end">Capital</th><th class="text-end">Interes</th>
+                                    <th class="text-end">Mora</th><th class="text-end">Cargos</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr t-foreach="o.line_ids" t-as="l">
+                                    <td><span t-field="l.date"/></td>
+                                    <td><span t-field="l.description"/></td>
+                                    <td><span t-field="l.reference"/></td>
+                                    <td class="text-end"><span t-field="l.capital"/></td>
+                                    <td class="text-end"><span t-field="l.interest"/></td>
+                                    <td class="text-end"><span t-field="l.late_fee"/></td>
+                                    <td class="text-end"><span t-field="l.fee"/></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div class="row mt32">
+                            <div class="col-6">
+                                <p><strong>Saldo inicial:</strong> <span t-field="o.opening_balance"/></p>
+                                <p><strong>Capital del periodo:</strong> <span t-field="o.period_capital"/></p>
+                                <p><strong>Intereses:</strong> <span t-field="o.period_interest"/></p>
+                                <p><strong>Mora:</strong> <span t-field="o.period_late_fees"/></p>
+                                <p><strong>Comisiones / cargos:</strong> <span t-field="o.period_fees"/></p>
+                                <p><strong>Saldo final:</strong> <span t-field="o.closing_balance"/></p>
+                            </div>
+                        </div>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </template>
+</odoo>

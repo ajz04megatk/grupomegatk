@@ -1,0 +1,76 @@
+name: Lenka Odoo 18 Integration
+
+on:
+  push:
+    branches:
+      - lenka-pilot
+    paths:
+      - 'lenka_financiero/**'
+      - '.github/workflows/lenka-odoo18-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  odoo18-install-and-tests:
+    runs-on: ubuntu-22.04
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U odoo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: odoo
+      PGPASSWORD: odoo
+
+    steps:
+      - name: Checkout Grupo MEGATK
+        uses: actions/checkout@v4
+
+      - name: Checkout Odoo 18 Community
+        uses: actions/checkout@v4
+        with:
+          repository: odoo/odoo
+          ref: '18.0'
+          path: odoo
+          depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: odoo/requirements.txt
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libldap2-dev libsasl2-dev libpq-dev libxml2-dev libxslt1-dev zlib1g-dev libjpeg-dev libffi-dev libssl-dev
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip wheel
+          pip install -r odoo/requirements.txt
+
+      - name: Prepare isolated Lenka addons path
+        run: |
+          mkdir -p custom_addons
+          cp -R lenka_financiero custom_addons/lenka_financiero
+
+      - name: Install Lenka module in Odoo 18
+        run: |
+          python odoo/odoo-bin             --db_host=127.0.0.1             --db_port=5432             --db_user=odoo             --db_password=odoo             --addons-path=odoo/addons,custom_addons             -d lenka_test             -i lenka_financiero             --without-demo=all             --stop-after-init             --log-level=test
+
+      - name: Run Lenka tests
+        run: |
+          python odoo/odoo-bin             --db_host=127.0.0.1             --db_port=5432             --db_user=odoo             --db_password=odoo             --addons-path=odoo/addons,custom_addons             -d lenka_test             -u lenka_financiero             --without-demo=all             --test-enable             --test-tags=/lenka_financiero             --stop-after-init             --log-level=test
