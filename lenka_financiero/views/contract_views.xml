@@ -82,7 +82,7 @@
             <xpath expr="//header" position="inside">
                 <button name="action_generate_contract_documents" string="Generar documentos" type="object" invisible="is_quote or state not in ('review','approved','contracted','active')" groups="lenka_financiero.group_lenka_manager"/>
             </xpath>
-            <xpath expr="//page[@string='Aprobacion y contrato']" position="after">
+            <xpath expr="//page[@name='approval_contract']" position="after">
                 <page string="Contratos y documentos">
                     <field name="generated_document_ids">
                         <list>
