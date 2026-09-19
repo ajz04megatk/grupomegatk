@@ -22,7 +22,7 @@
                     </group>
                     <field name="body_html" widget="html"/>
                     <group string="Variables disponibles">
-                        <label string="{{CLIENTE}}, {{IDENTIDAD_CLIENTE}}, {{DIRECCION_CLIENTE}}, {{AVALES}}, {{MONEDA}}, {{MONTO}}, {{PRIMA}}, {{MONTO_FINANCIADO}}, {{TASA}}, {{PERIODO_TASA}}, {{PLAZO_MESES}}, {{PRIMER_PAGO}}, {{PRODUCTO}}, {{GARANTIAS}}, {{OPCION_COMPRA}}, {{FECHA}}, {{OPERACION}}, {{TIPO_OPERACION}}"/>
+                        <div class="o_form_label">{{CLIENTE}}, {{IDENTIDAD_CLIENTE}}, {{DIRECCION_CLIENTE}}, {{AVALES}}, {{MONEDA}}, {{MONTO}}, {{PRIMA}}, {{MONTO_FINANCIADO}}, {{TASA}}, {{PERIODO_TASA}}, {{PLAZO_MESES}}, {{PRIMER_PAGO}}, {{PRODUCTO}}, {{GARANTIAS}}, {{OPCION_COMPRA}}, {{FECHA}}, {{OPERACION}}, {{TIPO_OPERACION}}</div>
                     </group>
                     <field name="notes"/>
                 </sheet>
