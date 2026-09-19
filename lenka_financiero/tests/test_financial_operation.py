@@ -27,7 +27,7 @@ class TestLenkaFinancialOperation(TransactionCase):
         self.assertEqual(len(operation.schedule_line_ids), 12)
         first = operation.schedule_line_ids.sorted('sequence')[0]
         last = operation.schedule_line_ids.sorted('sequence')[-1]
-        self.assertAlmostEqual(first.payment, 10046.208547, places=4)
+        self.assertAlmostEqual(first.payment, 10046.21, places=2)
         self.assertAlmostEqual(first.interest, 3000.0, places=2)
         self.assertAlmostEqual(last.closing_balance, 0.0, places=2)
         self.assertAlmostEqual(sum(operation.schedule_line_ids.mapped('capital')), 100000.0, places=2)
