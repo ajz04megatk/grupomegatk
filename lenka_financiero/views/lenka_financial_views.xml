@@ -87,7 +87,7 @@
                                 </list>
                             </field>
                         </page>
-                        <page string="Fondeo">
+                        <page name="funding" string="Fondeo">
                             <field name="funding_line_ids">
                                 <list editable="bottom">
                                     <field name="source_type"/>
