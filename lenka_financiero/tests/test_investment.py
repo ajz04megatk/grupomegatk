@@ -51,15 +51,46 @@ class TestLenkaInvestment(TransactionCase):
         with self.assertRaises(ValidationError):
             withdrawal.action_post()
 
-    def test_early_withdrawal_penalty_reduces_interest_payment(self):
-        investment = self._investment()
+    def test_early_withdrawal_recalculates_all_interest_at_contractual_early_rate(self):
+        investment = self._investment(
+            passive_rate=1.5,
+            early_withdrawal_rate=1.0,
+            rate_period='monthly',
+        )
+        investment.action_generate_monthly_interest()
+        preferential_interest = sum(investment.interest_line_ids.mapped('amount'))
+
         withdrawal = self.env['lenka.investment.withdrawal'].create({
             'investment_id': investment.id,
             'principal_amount': 20000.0,
-            'accrued_interest_amount': 1000.0,
-            'penalty_rate': 25.0,
             'date': fields.Date.context_today(self.env.user),
         })
         self.assertTrue(withdrawal.early_withdrawal)
-        self.assertAlmostEqual(withdrawal.penalty_amount, 250.0, places=2)
-        self.assertAlmostEqual(withdrawal.total_amount, 20750.0, places=2)
+        withdrawal.action_post()
+
+        recalculated_interest = withdrawal.accrued_interest_amount
+        self.assertAlmostEqual(withdrawal.effective_rate, 1.0, places=4)
+        self.assertLess(recalculated_interest, preferential_interest)
+        self.assertAlmostEqual(
+            withdrawal.total_amount,
+            withdrawal.principal_amount + recalculated_interest,
+            places=2,
+        )
+
+    def test_early_withdrawal_compounds_monthly_at_reduced_rate(self):
+        investment = self._investment(
+            passive_rate=1.5,
+            early_withdrawal_rate=1.0,
+            rate_period='monthly',
+        )
+        withdrawal = self.env['lenka.investment.withdrawal'].create({
+            'investment_id': investment.id,
+            'principal_amount': 20000.0,
+            'date': fields.Date.context_today(self.env.user),
+        })
+        withdrawal.action_post()
+        lines = investment.interest_line_ids.sorted('period_date')
+        self.assertGreaterEqual(len(lines), 3)
+        self.assertAlmostEqual(lines[0].amount, 1000.0, places=2)
+        self.assertAlmostEqual(lines[1].base_amount, 101000.0, places=2)
+        self.assertAlmostEqual(lines[1].amount, 1010.0, places=2)
