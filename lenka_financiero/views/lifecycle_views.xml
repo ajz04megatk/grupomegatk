@@ -11,7 +11,7 @@
                 <button name="action_activate" string="Activar operacion" type="object" class="btn-primary" invisible="state != 'contracted'" groups="lenka_financiero.group_lenka_manager"/>
             </xpath>
             <xpath expr="//notebook" position="inside">
-                <page string="Aprobacion y contrato">
+                <page name="approval_contract" string="Aprobacion y contrato">
                     <group>
                         <group>
                             <field name="approved_by" readonly="1"/>
