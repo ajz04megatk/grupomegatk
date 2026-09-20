@@ -124,3 +124,19 @@ class TestLenkaInvestment(TransactionCase):
         })
         with self.assertRaises(ValidationError):
             withdrawal.action_post()
+
+
+    def test_fixed_investment_requires_early_withdrawal_rate(self):
+        investment = self.env['lenka.investment'].create({
+            'partner_id': self.partner.id,
+            'investment_type': 'fixed',
+            'principal_amount': 100000.0,
+            'passive_rate': 1.5,
+            'early_withdrawal_rate': 0.0,
+            'rate_period': 'monthly',
+            'start_date': fields.Date.context_today(self.env.user),
+            'term_months': 12,
+            'capitalization': 'monthly',
+        })
+        with self.assertRaises(ValidationError):
+            investment.action_activate()
