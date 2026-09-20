@@ -90,6 +90,8 @@ class LenkaInvestmentInterestAccounting(models.Model):
             expense = company.lenka_passive_interest_expense_account_id
             if not journal or not liability or not expense:
                 raise ValidationError(_('Configure diario, obligacion con inversionistas y gasto de intereses pasivos.'))
+            if journal.company_id != company:
+                raise ValidationError(_('El diario de inversiones debe pertenecer a la misma empresa.'))
             amount_company = investment.currency_id._convert(rec.amount, company.currency_id, company, rec.period_date)
             move = self.env['account.move'].with_company(company).create({
                 'move_type': 'entry',
@@ -138,6 +140,8 @@ class LenkaInvestmentWithdrawalAccounting(models.Model):
             expense = company.lenka_passive_interest_expense_account_id
             if not journal or not liability or not expense:
                 raise ValidationError(_('Configure diario, obligacion con inversionistas y gasto de intereses pasivos.'))
+            if journal.company_id != company:
+                raise ValidationError(_('El diario de inversiones debe pertenecer a la misma empresa.'))
             if rec.adjustment_move_id:
                 continue
 
@@ -195,6 +199,8 @@ class LenkaInvestmentWithdrawalAccounting(models.Model):
             liability = company.lenka_investor_liability_account_id
             if not journal or not liability:
                 raise ValidationError(_('Configure el diario de inversiones y la cuenta de obligacion con inversionistas.'))
+            if journal.company_id != company:
+                raise ValidationError(_('El diario de inversiones debe pertenecer a la misma empresa.'))
             liquidity = journal.default_account_id
             if not liquidity:
                 raise ValidationError(_('El diario de inversiones debe tener una cuenta contable por defecto.'))
