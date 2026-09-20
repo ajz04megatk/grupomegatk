@@ -28,6 +28,9 @@
         'report/lenka_statement_report.xml',
         'report/lenka_contract_report.xml',
     ],
+    'demo': [
+        'demo/lenka_demo.xml',
+    ],
     'application': True,
     'installable': True,
 }
