@@ -16,6 +16,7 @@ class TestLenkaInvestment(TransactionCase):
             'investment_type': 'fixed',
             'principal_amount': 100000.0,
             'passive_rate': 12.0,
+            'early_withdrawal_rate': 6.0,
             'rate_period': 'annual',
             'start_date': fields.Date.add(fields.Date.context_today(self.env.user), months=-3),
             'term_months': 12,
