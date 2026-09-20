@@ -92,6 +92,15 @@ class TestLenkaEndToEnd(TransactionCase):
         operation.action_mark_contracted()
         self.assertEqual(operation.state, 'contracted')
 
+        self.env['lenka.funding.line'].create({
+            'operation_id': operation.id,
+            'source_type': 'own',
+            'reference': 'Fondeo E2E',
+            'amount': 90000.0,
+            'cost_rate': 0.0,
+            'cost_period': 'annual',
+        })
+
         disbursement = self.env['lenka.disbursement'].create({
             'operation_id': operation.id,
             'amount': 90000.0,
