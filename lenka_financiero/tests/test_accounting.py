@@ -21,6 +21,15 @@ class TestLenkaAccounting(TransactionCase):
             'state': 'approved',
         })
         cls.operation.action_generate_schedule()
+        cls.operation.write({'contract_signed': True, 'state': 'contracted'})
+        cls.env['lenka.funding.line'].create({
+            'operation_id': cls.operation.id,
+            'source_type': 'own',
+            'reference': 'Fondeo contable de prueba',
+            'amount': 10000.0,
+            'cost_rate': 0.0,
+            'cost_period': 'annual',
+        })
 
     def test_disbursement_requires_accounting_configuration(self):
         disbursement = self.env['lenka.disbursement'].create({
