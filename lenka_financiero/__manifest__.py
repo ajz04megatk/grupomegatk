@@ -24,6 +24,7 @@
         'views/contract_views.xml',
         'views/mobile_access_views.xml',
         'views/lenka_menu.xml',
+        'views/demo_setup_views.xml',
         'report/lenka_quote_report.xml',
         'report/lenka_statement_report.xml',
         'report/lenka_contract_report.xml',
