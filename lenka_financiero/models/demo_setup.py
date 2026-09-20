@@ -72,7 +72,7 @@ class LenkaDemoSetup(models.TransientModel):
                     'operation_id': financing.id,
                     'source_type': 'bank_loan',
                     'reference': 'Prestamo bancario demo 15% anual',
-                    'amount': 100000.0,
+                    'amount': 80000.0,
                     'cost_rate': 15.0,
                     'cost_period': 'annual',
                 },
@@ -83,6 +83,14 @@ class LenkaDemoSetup(models.TransientModel):
                     'amount': 35000.0,
                     'cost_rate': 0.0,
                     'cost_period': 'annual',
+                },
+                {
+                    'operation_id': financing.id,
+                    'source_type': 'credit_card',
+                    'reference': 'Tarjeta empresarial demo',
+                    'amount': 20000.0,
+                    'cost_rate': 3.5,
+                    'cost_period': 'monthly',
                 },
             ])
             self.env['lenka.guarantee'].sudo().create({
