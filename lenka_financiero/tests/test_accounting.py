@@ -63,3 +63,72 @@ class TestLenkaAccounting(TransactionCase):
         before = payment.move_id
         payment.action_create_account_move()
         self.assertEqual(payment.move_id, before)
+
+
+    def _configure_accounting(self):
+        journal = self.env['account.journal'].search([
+            ('company_id', '=', self.company.id),
+            ('type', '=', 'general'),
+            ('default_account_id', '!=', False),
+        ], limit=1)
+        if not journal:
+            journal = self.env['account.journal'].search([
+                ('company_id', '=', self.company.id),
+                ('default_account_id', '!=', False),
+            ], limit=1)
+        accounts = self.env['account.account'].search([
+            ('company_ids', 'in', self.company.id),
+        ], limit=4)
+        if len(accounts) < 4:
+            self.skipTest('La base de prueba no contiene suficientes cuentas contables.')
+        self.company.write({
+            'lenka_disbursement_journal_id': journal.id,
+            'lenka_collection_journal_id': journal.id,
+            'lenka_portfolio_account_id': accounts[0].id,
+            'lenka_interest_income_account_id': accounts[1].id,
+            'lenka_late_fee_income_account_id': accounts[2].id,
+            'lenka_unapplied_account_id': accounts[3].id,
+        })
+        return journal
+
+    def test_disbursement_account_move_stays_draft(self):
+        self._configure_accounting()
+        disbursement = self.env['lenka.disbursement'].create({
+            'operation_id': self.operation.id,
+            'amount': 10000.0,
+            'destination_type': 'client',
+            'destination_partner_id': self.partner.id,
+        })
+        disbursement.action_post()
+        disbursement.action_create_account_move()
+        self.assertTrue(disbursement.move_id)
+        self.assertEqual(disbursement.move_id.state, 'draft')
+
+    def test_collection_account_move_stays_draft(self):
+        self._configure_accounting()
+        first = self.operation.schedule_line_ids.sorted('sequence')[0]
+        payment = self.env['lenka.payment'].create({
+            'operation_id': self.operation.id,
+            'payment_date': first.date,
+            'amount': 500.0,
+            'payment_method': 'transfer',
+        })
+        payment.action_post()
+        payment.action_create_account_move()
+        self.assertTrue(payment.move_id)
+        self.assertEqual(payment.move_id.state, 'draft')
+
+    def test_account_move_creation_is_idempotent(self):
+        self._configure_accounting()
+        first = self.operation.schedule_line_ids.sorted('sequence')[0]
+        payment = self.env['lenka.payment'].create({
+            'operation_id': self.operation.id,
+            'payment_date': first.date,
+            'amount': 500.0,
+            'payment_method': 'transfer',
+        })
+        payment.action_post()
+        payment.action_create_account_move()
+        first_move = payment.move_id
+        payment.action_create_account_move()
+        self.assertEqual(payment.move_id, first_move)
