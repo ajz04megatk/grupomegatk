@@ -44,7 +44,7 @@
         <field name="operation_id" ref="operation_lenka_demo_financing"/>
         <field name="source_type">bank_loan</field>
         <field name="reference">Prestamo bancario demo 15% anual</field>
-        <field name="amount">100000.00</field>
+        <field name="amount">80000.00</field>
         <field name="cost_rate">15.0</field>
         <field name="cost_period">annual</field>
     </record>
@@ -56,6 +56,15 @@
         <field name="amount">35000.00</field>
         <field name="cost_rate">0.0</field>
         <field name="cost_period">annual</field>
+    </record>
+
+    <record id="funding_lenka_demo_card" model="lenka.funding.line">
+        <field name="operation_id" ref="operation_lenka_demo_financing"/>
+        <field name="source_type">credit_card</field>
+        <field name="reference">Tarjeta empresarial demo</field>
+        <field name="amount">20000.00</field>
+        <field name="cost_rate">3.5</field>
+        <field name="cost_period">monthly</field>
     </record>
 
     <record id="guarantee_lenka_demo_equipment" model="lenka.guarantee">
@@ -110,5 +119,12 @@
         <field name="state">draft</field>
         <field name="contract_reference">DEMO-INV-001</field>
         <field name="notes">Escenario demo: 1.5% mensual; retiro anticipado recalcula retroactivamente al 1% mensual.</field>
+    </record>
+
+    <record id="contract_template_lenka_demo" model="lenka.contract.template">
+        <field name="name">Contrato Demo Financiamiento Lenka</field>
+        <field name="document_type">contract</field>
+        <field name="operation_type">financing</field>
+        <field name="body_html">&lt;p&gt;&lt;strong&gt;Contrato de Financiamiento Demo&lt;/strong&gt;&lt;/p&gt;&lt;p&gt;Cliente: {{CLIENTE}}&lt;/p&gt;&lt;p&gt;Monto financiado: {{MONTO_FINANCIADO}} {{MONEDA}}&lt;/p&gt;&lt;p&gt;Tasa: {{TASA}} - Plazo: {{PLAZO_MESES}} meses.&lt;/p&gt;</field>
     </record>
 </odoo>
