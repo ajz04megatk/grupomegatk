@@ -102,43 +102,14 @@ jobs:
 
       - name: Verify Lenka demo scenarios
         run: |
-          PGPASSWORD=odoo psql -h 127.0.0.1 -U odoo -d lenka_demo -v ON_ERROR_STOP=1 <<'SQL'
-          DO $
-          DECLARE
-              operations integer;
-              investments integer;
-              funding integer;
-              guarantees integer;
-          BEGIN
-              SELECT count(*) INTO operations
-              FROM lenka_financial_operation
-              WHERE notes LIKE 'Escenario demo:%';
+          operations=$(PGPASSWORD=odoo psql -h 127.0.0.1 -U odoo -d lenka_demo -tAc "SELECT count(*) FROM lenka_financial_operation WHERE notes LIKE 'Escenario demo:%';")
+          investments=$(PGPASSWORD=odoo psql -h 127.0.0.1 -U odoo -d lenka_demo -tAc "SELECT count(*) FROM lenka_investment WHERE notes LIKE 'Escenario demo:%';")
+          funding=$(PGPASSWORD=odoo psql -h 127.0.0.1 -U odoo -d lenka_demo -tAc "SELECT count(*) FROM lenka_funding_line fl JOIN lenka_financial_operation op ON op.id = fl.operation_id WHERE op.notes LIKE 'Escenario demo:%';")
+          guarantees=$(PGPASSWORD=odoo psql -h 127.0.0.1 -U odoo -d lenka_demo -tAc "SELECT count(*) FROM lenka_guarantee g JOIN lenka_financial_operation op ON op.id = g.operation_id WHERE op.notes LIKE 'Escenario demo:%';")
 
-              SELECT count(*) INTO investments
-              FROM lenka_investment
-              WHERE notes LIKE 'Escenario demo:%';
+          echo "Demo counts: operations=$operations investments=$investments funding=$funding guarantees=$guarantees"
 
-              SELECT count(*) INTO funding
-              FROM lenka_funding_line fl
-              JOIN lenka_financial_operation op ON op.id = fl.operation_id
-              WHERE op.notes LIKE 'Escenario demo:%';
-
-              SELECT count(*) INTO guarantees
-              FROM lenka_guarantee g
-              JOIN lenka_financial_operation op ON op.id = g.operation_id
-              WHERE op.notes LIKE 'Escenario demo:%';
-
-              IF operations < 3 THEN
-                  RAISE EXCEPTION 'Lenka demo incompleto: solo % operaciones', operations;
-              END IF;
-              IF investments < 1 THEN
-                  RAISE EXCEPTION 'Lenka demo incompleto: no hay inversion demo';
-              END IF;
-              IF funding < 2 THEN
-                  RAISE EXCEPTION 'Lenka demo incompleto: solo % fuentes de fondeo', funding;
-              END IF;
-              IF guarantees < 1 THEN
-                  RAISE EXCEPTION 'Lenka demo incompleto: no hay garantia demo';
-              END IF;
-          END $;
-          SQL
+          test "$operations" -ge 3
+          test "$investments" -ge 1
+          test "$funding" -ge 2
+          test "$guarantees" -ge 1
