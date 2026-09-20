@@ -61,8 +61,8 @@ class LenkaDisbursementAccounting(models.Model):
                     'account_id': portfolio.id,
                     'debit': amount_company,
                     'credit': 0.0,
-                    'currency_id': self.currency_id.id if self.currency_id != company.currency_id else False,
-                    'amount_currency': self.amount if self.currency_id != company.currency_id else 0.0,
+                    'currency_id': self.currency_id.id,
+                    'amount_currency': self.amount,
                 }),
                 (0, 0, {
                     'name': _('Desembolso - %s') % self.operation_id.name,
@@ -70,8 +70,8 @@ class LenkaDisbursementAccounting(models.Model):
                     'account_id': liquidity.id,
                     'debit': 0.0,
                     'credit': amount_company,
-                    'currency_id': self.currency_id.id if self.currency_id != company.currency_id else False,
-                    'amount_currency': -self.amount if self.currency_id != company.currency_id else 0.0,
+                    'currency_id': self.currency_id.id,
+                    'amount_currency': -self.amount,
                 }),
             ],
         }
@@ -136,8 +136,8 @@ class LenkaPaymentAccounting(models.Model):
             'account_id': liquidity.id,
             'debit': amount_company,
             'credit': 0.0,
-            'currency_id': self.currency_id.id if self.currency_id != company.currency_id else False,
-            'amount_currency': total_to_book if self.currency_id != company.currency_id else 0.0,
+            'currency_id': self.currency_id.id,
+            'amount_currency': total_to_book,
         })]
 
         def credit_line(account, amount, label):
@@ -150,8 +150,8 @@ class LenkaPaymentAccounting(models.Model):
                 'account_id': account.id,
                 'debit': 0.0,
                 'credit': company_amount,
-                'currency_id': self.currency_id.id if self.currency_id != company.currency_id else False,
-                'amount_currency': -amount if self.currency_id != company.currency_id else 0.0,
+                'currency_id': self.currency_id.id,
+                'amount_currency': -amount,
             }))
 
         credit_line(portfolio, self.capital_amount, _('Capital cobrado - %s') % self.operation_id.name)
