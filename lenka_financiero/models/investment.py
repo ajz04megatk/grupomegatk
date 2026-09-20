@@ -79,6 +79,8 @@ class LenkaInvestment(models.Model):
         for rec in self:
             if rec.state != 'draft':
                 continue
+            if rec.investment_type == 'fixed' and rec.early_withdrawal_rate > rec.passive_rate:
+                raise ValidationError(_('La tasa por retiro anticipado no puede ser mayor que la tasa contractual preferencial.'))
             if rec.investment_type == 'fixed' and not (rec.maturity_date or rec.term_months):
                 raise ValidationError(_('Para una inversion a plazo fijo debe indicar vencimiento o plazo.'))
             if not rec.maturity_date and rec.term_months:
@@ -194,6 +196,8 @@ class LenkaInvestmentWithdrawal(models.Model):
             investment = rec.investment_id
             if investment.state not in ('active', 'matured'):
                 raise ValidationError(_('La inversion debe estar activa o vencida para registrar un retiro.'))
+            if rec.date < investment.start_date:
+                raise ValidationError(_('La fecha del retiro no puede ser anterior al inicio de la inversion.'))
             if rec.principal_amount > investment.outstanding_principal + 0.01:
                 raise ValidationError(_('El retiro excede el capital vigente.'))
             if rec.early_withdrawal:
