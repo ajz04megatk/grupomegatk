@@ -47,6 +47,8 @@ class LenkaInvestmentAccounting(models.Model):
                     'account_id': liquidity.id,
                     'debit': amount_company,
                     'credit': 0.0,
+                    'currency_id': rec.currency_id.id,
+                    'amount_currency': rec.principal_amount,
                 }),
                 (0, 0, {
                     'name': _('Obligacion con inversionista - %s') % rec.name,
@@ -54,6 +56,8 @@ class LenkaInvestmentAccounting(models.Model):
                     'account_id': liability.id,
                     'debit': 0.0,
                     'credit': amount_company,
+                    'currency_id': rec.currency_id.id,
+                    'amount_currency': -rec.principal_amount,
                 }),
             ]
             move = self.env['account.move'].with_company(company).create({
@@ -99,6 +103,8 @@ class LenkaInvestmentInterestAccounting(models.Model):
                         'account_id': expense.id,
                         'debit': amount_company,
                         'credit': 0.0,
+                        'currency_id': investment.currency_id.id,
+                        'amount_currency': rec.amount,
                     }),
                     (0, 0, {
                         'name': _('Interes por pagar / capitalizado - %s') % investment.name,
@@ -106,6 +112,8 @@ class LenkaInvestmentInterestAccounting(models.Model):
                         'account_id': liability.id,
                         'debit': 0.0,
                         'credit': amount_company,
+                        'currency_id': investment.currency_id.id,
+                        'amount_currency': -rec.amount,
                     }),
                 ],
             })
@@ -156,6 +164,8 @@ class LenkaInvestmentWithdrawalAccounting(models.Model):
                         'account_id': liability.id,
                         'debit': amount_company,
                         'credit': 0.0,
+                        'currency_id': investment.currency_id.id,
+                        'amount_currency': difference,
                     }),
                     (0, 0, {
                         'name': _('Reversion gasto interes pasivo - %s') % investment.name,
@@ -163,6 +173,8 @@ class LenkaInvestmentWithdrawalAccounting(models.Model):
                         'account_id': expense.id,
                         'debit': 0.0,
                         'credit': amount_company,
+                        'currency_id': investment.currency_id.id,
+                        'amount_currency': -difference,
                     }),
                 ],
             })
@@ -200,6 +212,8 @@ class LenkaInvestmentWithdrawalAccounting(models.Model):
                         'account_id': liability.id,
                         'debit': amount_company,
                         'credit': 0.0,
+                        'currency_id': investment.currency_id.id,
+                        'amount_currency': amount,
                     }),
                     (0, 0, {
                         'name': _('Pago a inversionista - %s') % investment.name,
@@ -207,6 +221,8 @@ class LenkaInvestmentWithdrawalAccounting(models.Model):
                         'account_id': liquidity.id,
                         'debit': 0.0,
                         'credit': amount_company,
+                        'currency_id': investment.currency_id.id,
+                        'amount_currency': -amount,
                     }),
                 ],
             })
