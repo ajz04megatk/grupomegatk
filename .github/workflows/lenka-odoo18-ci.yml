@@ -43,7 +43,7 @@ jobs:
           repository: odoo/odoo
           ref: '18.0'
           path: odoo
-          depth: 1
+          fetch-depth: 1
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -73,4 +73,72 @@ jobs:
 
       - name: Run Lenka tests
         run: |
-          python odoo/odoo-bin             --db_host=127.0.0.1             --db_port=5432             --db_user=odoo             --db_password=odoo             --addons-path=odoo/addons,custom_addons             -d lenka_test             -u lenka_financiero             --without-demo=all             --test-enable             --test-tags=/lenka_financiero             --stop-after-init             --log-level=test
+          python odoo/odoo-bin \
+            --db_host=127.0.0.1 \
+            --db_port=5432 \
+            --db_user=odoo \
+            --db_password=odoo \
+            --addons-path=odoo/addons,custom_addons \
+            -d lenka_test \
+            -u lenka_financiero \
+            --without-demo=all \
+            --test-enable \
+            --test-tags=/lenka_financiero \
+            --stop-after-init \
+            --log-level=test
+
+      - name: Install Lenka demo database
+        run: |
+          python odoo/odoo-bin \
+            --db_host=127.0.0.1 \
+            --db_port=5432 \
+            --db_user=odoo \
+            --db_password=odoo \
+            --addons-path=odoo/addons,custom_addons \
+            -d lenka_demo \
+            -i lenka_financiero \
+            --stop-after-init \
+            --log-level=test
+
+      - name: Verify Lenka demo scenarios
+        run: |
+          PGPASSWORD=odoo psql -h 127.0.0.1 -U odoo -d lenka_demo -v ON_ERROR_STOP=1 <<'SQL'
+          DO $
+          DECLARE
+              operations integer;
+              investments integer;
+              funding integer;
+              guarantees integer;
+          BEGIN
+              SELECT count(*) INTO operations
+              FROM lenka_financial_operation
+              WHERE notes LIKE 'Escenario demo:%';
+
+              SELECT count(*) INTO investments
+              FROM lenka_investment
+              WHERE notes LIKE 'Escenario demo:%';
+
+              SELECT count(*) INTO funding
+              FROM lenka_funding_line fl
+              JOIN lenka_financial_operation op ON op.id = fl.operation_id
+              WHERE op.notes LIKE 'Escenario demo:%';
+
+              SELECT count(*) INTO guarantees
+              FROM lenka_guarantee g
+              JOIN lenka_financial_operation op ON op.id = g.operation_id
+              WHERE op.notes LIKE 'Escenario demo:%';
+
+              IF operations < 3 THEN
+                  RAISE EXCEPTION 'Lenka demo incompleto: solo % operaciones', operations;
+              END IF;
+              IF investments < 1 THEN
+                  RAISE EXCEPTION 'Lenka demo incompleto: no hay inversion demo';
+              END IF;
+              IF funding < 2 THEN
+                  RAISE EXCEPTION 'Lenka demo incompleto: solo % fuentes de fondeo', funding;
+              END IF;
+              IF guarantees < 1 THEN
+                  RAISE EXCEPTION 'Lenka demo incompleto: no hay garantia demo';
+              END IF;
+          END $;
+          SQL
