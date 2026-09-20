@@ -21,6 +21,7 @@ class TestLenkaPayment(TransactionCase):
             'first_payment_date': first_payment_date or fields.Date.context_today(self.env.user),
         })
         operation.action_generate_schedule()
+        operation.state = 'active'
         return operation
 
     def test_payment_priority_late_fee_interest_capital(self):
