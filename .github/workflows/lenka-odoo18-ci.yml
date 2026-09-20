@@ -145,3 +145,45 @@ jobs:
           kill $ODOO_PID
           wait $ODOO_PID || true
           echo "Lenka live Odoo HTTP smoke test OK"
+
+      - name: Live demo ORM smoke test
+        run: |
+          python odoo/odoo-bin shell \
+            --db_host=127.0.0.1 \
+            --db_port=5432 \
+            --db_user=odoo \
+            --db_password=odoo \
+            --addons-path=odoo/addons,custom_addons \
+            -d lenka_demo <<'PY'
+          Operation = env['lenka.financial.operation']
+          Investment = env['lenka.investment']
+
+          financing = Operation.search([('notes', '=', 'Escenario demo: financiamiento con 10% de prima y cuota nivelada.')], limit=1)
+          assert financing
+          financing.action_generate_schedule()
+          assert len(financing.schedule_line_ids) == 24
+          assert abs(sum(financing.schedule_line_ids.mapped('capital')) - financing.financed_amount) < 0.02
+
+          interest_only = Operation.search([('notes', '=', 'Escenario demo: pago mensual de intereses y capital al vencimiento.')], limit=1)
+          assert interest_only
+          interest_only.action_generate_schedule()
+          lines = interest_only.schedule_line_ids.sorted('sequence')
+          assert len(lines) == 12
+          assert abs(lines[0].capital) < 0.01
+          assert abs(lines[-1].capital - interest_only.financed_amount) < 0.02
+
+          lease = Operation.search([('notes', '=', 'Escenario demo: arrendamiento con opcion de compra del 5%.')], limit=1)
+          assert lease
+          lease.action_generate_schedule()
+          assert len(lease.schedule_line_ids) == 36
+          assert abs(lease.residual_purchase_amount - 7500.0) < 0.01
+
+          investment = Investment.search([('notes', '=', 'Escenario demo: 1.5% mensual; retiro anticipado recalcula retroactivamente al 1% mensual.')], limit=1)
+          assert investment
+          investment.action_activate()
+          assert investment.state == 'active'
+          assert investment.maturity_date
+
+          env.cr.commit()
+          print('LENKA_DEMO_ORM_OK')
+          PY
