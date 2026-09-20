@@ -63,7 +63,6 @@ class LenkaInvestmentAccounting(models.Model):
                 'ref': '%s - Recepcion deposito' % rec.name,
                 'line_ids': lines,
             })
-            move.action_post()
             rec.receipt_move_id = move.id
         return True
 
@@ -110,7 +109,6 @@ class LenkaInvestmentInterestAccounting(models.Model):
                     }),
                 ],
             })
-            move.action_post()
             rec.move_id = move.id
         return True
 
@@ -168,7 +166,6 @@ class LenkaInvestmentWithdrawalAccounting(models.Model):
                     }),
                 ],
             })
-            move.action_post()
             rec.adjustment_move_id = move.id
         return True
 
@@ -213,6 +210,5 @@ class LenkaInvestmentWithdrawalAccounting(models.Model):
                     }),
                 ],
             })
-            move.action_post()
             rec.move_id = move.id
         return True
