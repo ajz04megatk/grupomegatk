@@ -70,6 +70,8 @@ class LenkaPayment(models.Model):
         for rec in self:
             if rec.state != 'draft':
                 continue
+            if rec.operation_id.state != 'active':
+                raise ValidationError(_('Solo se pueden aplicar cobros a operaciones activas.'))
             if not rec.operation_id.schedule_line_ids:
                 raise ValidationError(_('La operacion no tiene tabla de amortizacion.'))
 
@@ -155,6 +157,8 @@ class LenkaPayment(models.Model):
 
     def action_cancel(self):
         for rec in self:
+            if rec.move_id and rec.move_id.state == 'posted':
+                raise ValidationError(_('No se puede anular el cobro mientras su asiento contable este publicado. Debe revertirse primero en Contabilidad.'))
             if rec.state != 'posted':
                 rec.state = 'cancelled'
                 continue
