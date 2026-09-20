@@ -113,3 +113,35 @@ jobs:
           test "$investments" -ge 1
           test "$funding" -ge 2
           test "$guarantees" -ge 1
+
+      - name: HTTP smoke test against live Odoo demo
+        run: |
+          python odoo/odoo-bin \
+            --db_host=127.0.0.1 \
+            --db_port=5432 \
+            --db_user=odoo \
+            --db_password=odoo \
+            --addons-path=odoo/addons,custom_addons \
+            -d lenka_demo \
+            --http-port=8069 \
+            --workers=0 \
+            --log-level=warn \
+            > /tmp/lenka_odoo.log 2>&1 &
+          ODOO_PID=$!
+
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8069/web/login >/tmp/lenka_login.html; then
+              break
+            fi
+            sleep 1
+          done
+
+          curl -fsS http://127.0.0.1:8069/web/login | grep -q "Odoo"
+          curl -fsS -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","method":"call","params":{},"id":1}' \
+            http://127.0.0.1:8069/web/webclient/version_info \
+            | grep -q '"server_version"'
+
+          kill $ODOO_PID
+          wait $ODOO_PID || true
+          echo "Lenka live Odoo HTTP smoke test OK"
