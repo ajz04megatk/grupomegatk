@@ -133,7 +133,10 @@ class LenkaPayment(models.Model):
 
             # 4) Si paga mas, todo excedente se aplica directamente a capital.
             # No se anticipan intereses de cuotas futuras.
-            outstanding_after_due = max(rec.operation_id.financed_amount - rec.operation_id.paid_capital - capital_total, 0.0)
+            # paid_capital ya refleja en este punto el capital aplicado a las cuotas
+            # anteriores y el capital que acabamos de actualizar en due_lines. No se
+            # debe restar capital_total una segunda vez.
+            outstanding_after_due = max(rec.operation_id.financed_amount - rec.operation_id.paid_capital, 0.0)
             extra_capital = min(remaining, outstanding_after_due)
             remaining -= extra_capital
             if extra_capital:
