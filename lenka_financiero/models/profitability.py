@@ -1,4 +1,5 @@
 from odoo import api, fields, models, _
+from odoo.exceptions import ValidationError
 
 
 class LenkaFinancialOperationProfitability(models.Model):
@@ -97,7 +98,7 @@ class LenkaFinancialOperationProfitability(models.Model):
         for rec in self.filtered(lambda r: r.funding_line_ids and not r.is_quote):
             total = sum(rec.funding_line_ids.mapped('amount'))
             if total > rec.financed_amount + 0.01:
-                raise models.ValidationError(
+                raise ValidationError(
                     _('El fondeo asignado no puede exceder el monto financiado de la operacion.')
                 )
 
