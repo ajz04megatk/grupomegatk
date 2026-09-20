@@ -49,8 +49,16 @@ class LenkaStatement(models.Model):
                 raise ValidationError(_('La fecha inicial no puede ser posterior a la fecha final.'))
             if rec.statement_type == 'operation' and not rec.operation_id:
                 raise ValidationError(_('Seleccione una operacion financiera.'))
+            if rec.statement_type == 'operation' and rec.operation_id and rec.operation_id.partner_id != rec.partner_id:
+                raise ValidationError(_('El cliente del estado de cuenta debe coincidir con el cliente de la operacion.'))
+            if rec.statement_type == 'operation' and rec.operation_id and rec.operation_id.company_id != rec.company_id:
+                raise ValidationError(_('La empresa del estado de cuenta debe coincidir con la empresa de la operacion.'))
             if rec.statement_type == 'investment' and not rec.investment_id:
                 raise ValidationError(_('Seleccione una inversion o deposito.'))
+            if rec.statement_type == 'investment' and rec.investment_id and rec.investment_id.partner_id != rec.partner_id:
+                raise ValidationError(_('El inversionista del estado de cuenta debe coincidir con la inversion seleccionada.'))
+            if rec.statement_type == 'investment' and rec.investment_id and rec.investment_id.company_id != rec.company_id:
+                raise ValidationError(_('La empresa del estado de cuenta debe coincidir con la empresa de la inversion.'))
 
     def action_generate(self):
         for rec in self:
