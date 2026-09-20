@@ -94,3 +94,33 @@ class TestLenkaInvestment(TransactionCase):
         self.assertAlmostEqual(lines[0].amount, 1000.0, places=2)
         self.assertAlmostEqual(lines[1].base_amount, 101000.0, places=2)
         self.assertAlmostEqual(lines[1].amount, 1010.0, places=2)
+
+
+    def test_early_rate_cannot_exceed_preferential_rate(self):
+        investment = self.env['lenka.investment'].create({
+            'partner_id': self.partner.id,
+            'investment_type': 'fixed',
+            'principal_amount': 100000.0,
+            'passive_rate': 1.0,
+            'early_withdrawal_rate': 1.5,
+            'rate_period': 'monthly',
+            'start_date': fields.Date.context_today(self.env.user),
+            'term_months': 12,
+            'capitalization': 'monthly',
+        })
+        with self.assertRaises(ValidationError):
+            investment.action_activate()
+
+    def test_withdrawal_before_investment_start_is_rejected(self):
+        investment = self._investment(
+            passive_rate=1.5,
+            early_withdrawal_rate=1.0,
+            rate_period='monthly',
+        )
+        withdrawal = self.env['lenka.investment.withdrawal'].create({
+            'investment_id': investment.id,
+            'principal_amount': 10000.0,
+            'date': fields.Date.add(investment.start_date, days=-1),
+        })
+        with self.assertRaises(ValidationError):
+            withdrawal.action_post()
