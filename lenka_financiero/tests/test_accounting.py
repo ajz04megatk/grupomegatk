@@ -116,6 +116,7 @@ class TestLenkaAccounting(TransactionCase):
 
     def test_collection_account_move_stays_draft(self):
         self._configure_accounting()
+        self.operation.state = 'active'
         first = self.operation.schedule_line_ids.sorted('sequence')[0]
         payment = self.env['lenka.payment'].create({
             'operation_id': self.operation.id,
@@ -130,6 +131,7 @@ class TestLenkaAccounting(TransactionCase):
 
     def test_account_move_creation_is_idempotent(self):
         self._configure_accounting()
+        self.operation.state = 'active'
         first = self.operation.schedule_line_ids.sorted('sequence')[0]
         payment = self.env['lenka.payment'].create({
             'operation_id': self.operation.id,
