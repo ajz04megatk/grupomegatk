@@ -79,6 +79,8 @@ class LenkaInvestment(models.Model):
         for rec in self:
             if rec.state != 'draft':
                 continue
+            if rec.investment_type == 'fixed' and rec.early_withdrawal_rate <= 0:
+                raise ValidationError(_('Para una inversion a plazo fijo debe indicar la tasa aplicable por retiro anticipado.'))
             if rec.investment_type == 'fixed' and rec.early_withdrawal_rate > rec.passive_rate:
                 raise ValidationError(_('La tasa por retiro anticipado no puede ser mayor que la tasa contractual preferencial.'))
             if rec.investment_type == 'fixed' and not (rec.maturity_date or rec.term_months):
@@ -200,6 +202,9 @@ class LenkaInvestmentWithdrawal(models.Model):
                 raise ValidationError(_('La fecha del retiro no puede ser anterior al inicio de la inversion.'))
             if rec.principal_amount > investment.outstanding_principal + 0.01:
                 raise ValidationError(_('El retiro excede el capital vigente.'))
+            previous_withdrawals = investment.withdrawal_ids.filtered(lambda w: w.state == 'posted' and w.id != rec.id)
+            if previous_withdrawals and rec.early_withdrawal:
+                raise ValidationError(_('Un segundo retiro anticipado requiere una reestructuracion del contrato. No se recalculara automaticamente para evitar duplicar intereses.'))
             if rec.early_withdrawal:
                 recalculated = investment.action_recalculate_early_withdrawal(rec.date)
                 rec.write({
