@@ -83,7 +83,6 @@ class LenkaDisbursementAccounting(models.Model):
             if rec.move_id:
                 continue
             move = self.env['account.move'].with_company(rec.operation_id.company_id).create(rec._prepare_disbursement_move())
-            move.action_post()
             rec.move_id = move.id
         return True
 
@@ -176,7 +175,6 @@ class LenkaPaymentAccounting(models.Model):
             if rec.move_id:
                 continue
             move = self.env['account.move'].with_company(rec.operation_id.company_id).create(rec._prepare_collection_move())
-            move.action_post()
             rec.move_id = move.id
         return True
 
