@@ -153,8 +153,8 @@ class LenkaFundingCostAccounting(models.Model):
                         'account_id': expense.id,
                         'debit': amount_company,
                         'credit': 0.0,
-                        'currency_id': rec.currency_id.id if rec.currency_id != company.currency_id else False,
-                        'amount_currency': rec.amount if rec.currency_id != company.currency_id else 0.0,
+                        'currency_id': rec.currency_id.id,
+                        'amount_currency': rec.amount,
                     }),
                     (0, 0, {
                         'name': _('Pago / obligacion costo de fondeo - %s') % rec.name,
@@ -162,8 +162,8 @@ class LenkaFundingCostAccounting(models.Model):
                         'account_id': counterpart.id,
                         'debit': 0.0,
                         'credit': amount_company,
-                        'currency_id': rec.currency_id.id if rec.currency_id != company.currency_id else False,
-                        'amount_currency': -rec.amount if rec.currency_id != company.currency_id else 0.0,
+                        'currency_id': rec.currency_id.id,
+                        'amount_currency': -rec.amount,
                     }),
                 ],
             })
