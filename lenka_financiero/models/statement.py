@@ -197,7 +197,7 @@ class LenkaStatement(models.Model):
             'lenka_financiero.auto_send_statements', 'False'
         ) == 'True'
 
-        active_operations = self.env['lenka.financial.operation'].search([('state', '=', 'active')])
+        active_operations = self.env['lenka.financial.operation'].search([('state', '=', 'active'), ('company_id', 'in', self.env.companies.ids)])
         for operation in active_operations:
             existing = self.search_count([
                 ('operation_id', '=', operation.id),
@@ -219,7 +219,7 @@ class LenkaStatement(models.Model):
             if auto_send and statement.partner_id.email:
                 statement.action_send_email()
 
-        active_investments = self.env['lenka.investment'].search([('state', 'in', ('active', 'matured'))])
+        active_investments = self.env['lenka.investment'].search([('state', 'in', ('active', 'matured')), ('company_id', 'in', self.env.companies.ids)])
         for investment in active_investments:
             existing = self.search_count([
                 ('investment_id', '=', investment.id),
