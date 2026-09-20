@@ -212,3 +212,16 @@ class TestLenkaPayment(TransactionCase):
         self.assertAlmostEqual(second.late_fee_paid, 200.0, places=2)
         self.assertAlmostEqual(first.interest_paid, first.interest, places=2)
         self.assertGreaterEqual(first.capital_paid, 0.0)
+
+
+    def test_payment_on_non_active_operation_is_rejected(self):
+        from odoo.exceptions import ValidationError
+        operation = self._operation()
+        operation.state = 'approved'
+        payment = self.env['lenka.payment'].create({
+            'operation_id': operation.id,
+            'amount': 1000.0,
+            'payment_method': 'cash',
+        })
+        with self.assertRaises(ValidationError):
+            payment.action_post()
