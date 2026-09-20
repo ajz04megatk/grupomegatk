@@ -88,8 +88,8 @@ class TestLenkaAccounting(TransactionCase):
             ], limit=1)
         accounts = self.env['account.account'].search([
             ('company_ids', 'in', self.company.id),
-        ], limit=4)
-        if len(accounts) < 4:
+        ], limit=5)
+        if len(accounts) < 5:
             self.skipTest('La base de prueba no contiene suficientes cuentas contables.')
         self.company.write({
             'lenka_disbursement_journal_id': journal.id,
@@ -98,6 +98,7 @@ class TestLenkaAccounting(TransactionCase):
             'lenka_interest_income_account_id': accounts[1].id,
             'lenka_late_fee_income_account_id': accounts[2].id,
             'lenka_unapplied_account_id': accounts[3].id,
+            'lenka_card_fee_expense_account_id': accounts[4].id,
         })
         return journal
 
@@ -144,3 +145,41 @@ class TestLenkaAccounting(TransactionCase):
         first_move = payment.move_id
         payment.action_create_account_move()
         self.assertEqual(payment.move_id, first_move)
+
+
+    def test_card_fee_is_booked_separately(self):
+        self._configure_accounting()
+        self.operation.state = 'active'
+        first = self.operation.schedule_line_ids.sorted('sequence')[0]
+        payment = self.env['lenka.payment'].create({
+            'operation_id': self.operation.id,
+            'payment_date': first.date,
+            'amount': 1000.0,
+            'payment_method': 'card',
+            'card_fee_rate': 3.5,
+        })
+        payment.action_post()
+        self.assertAlmostEqual(payment.card_fee_amount, 35.0, places=2)
+        self.assertAlmostEqual(payment.net_bank_amount, 965.0, places=2)
+        payment.action_create_account_move()
+        move = payment.move_id
+        fee_lines = move.line_ids.filtered(
+            lambda line: line.account_id == self.company.lenka_card_fee_expense_account_id
+        )
+        self.assertEqual(len(fee_lines), 1)
+        self.assertAlmostEqual(fee_lines.debit, 35.0, places=2)
+        self.assertAlmostEqual(sum(move.line_ids.mapped('debit')), sum(move.line_ids.mapped('credit')), places=2)
+
+    def test_card_fee_account_is_required_for_card_collection(self):
+        self._configure_accounting()
+        self.company.lenka_card_fee_expense_account_id = False
+        self.operation.state = 'active'
+        payment = self.env['lenka.payment'].create({
+            'operation_id': self.operation.id,
+            'amount': 1000.0,
+            'payment_method': 'card',
+            'card_fee_rate': 3.5,
+        })
+        payment.action_post()
+        with self.assertRaises(ValidationError):
+            payment.action_create_account_move()
