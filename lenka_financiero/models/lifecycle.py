@@ -37,7 +37,7 @@ class LenkaFinancialOperationLifecycle(models.Model):
         if self.calculation_method != 'custom' and not self.schedule_line_ids:
             missing.append(_('tabla de amortizacion'))
         required_docs = self.document_ids.filtered(lambda d: d.required)
-        missing_docs = required_docs.filtered(lambda d: d.state != 'received')
+        missing_docs = required_docs.filtered(lambda d: d.state != 'received' or not d.attachment_id)
         if missing_docs:
             missing.append(_('documentos obligatorios'))
         if missing:
@@ -147,8 +147,11 @@ class LenkaDisbursement(models.Model):
         for rec in self:
             if rec.state != 'draft':
                 continue
-            if rec.operation_id.state not in ('approved', 'contracted'):
-                raise ValidationError(_('La operacion debe estar aprobada o contratada para desembolsar.'))
+            if rec.operation_id.state != 'contracted':
+                raise ValidationError(_('La operacion debe estar contratada y con contrato firmado antes de desembolsar.'))
+            funding_total = sum(rec.operation_id.funding_line_ids.mapped('amount'))
+            if abs(funding_total - rec.operation_id.financed_amount) > 0.01:
+                raise ValidationError(_('El fondeo debe cubrir exactamente el monto financiado antes de desembolsar.'))
             already = sum(rec.operation_id.disbursement_ids.filtered(lambda d: d.state == 'posted' and d.id != rec.id).mapped('amount'))
             if already + rec.amount > rec.operation_id.financed_amount + 0.01:
                 raise ValidationError(_('El desembolso excede el monto financiado.'))
