@@ -43,6 +43,7 @@ class TestLenkaAccounting(TransactionCase):
             disbursement.action_create_account_move()
 
     def test_payment_requires_accounting_configuration(self):
+        self.operation.state = 'active'
         payment = self.env['lenka.payment'].create({
             'operation_id': self.operation.id,
             'amount': 500.0,
