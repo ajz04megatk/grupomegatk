@@ -36,7 +36,6 @@ class LenkaAlertAutomation(models.AbstractModel):
             ('res_model_id', '=', model.id),
             ('res_id', '=', res_id),
             ('summary', '=', summary),
-            ('date_done', '=', False),
         ]))
 
     @api.model
