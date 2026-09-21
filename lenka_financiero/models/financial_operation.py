@@ -116,6 +116,8 @@ class LenkaFinancialOperation(models.Model):
 
     def action_generate_schedule(self):
         for rec in self:
+            if rec.state in ('active', 'done') or rec.disbursement_ids.filtered(lambda d: d.state == 'posted'):
+                raise ValidationError(_('No se puede reemplazar la tabla de amortizacion despues de un desembolso. Use una reestructuracion para conservar el historial contractual.'))
             if rec.calculation_method == 'custom':
                 continue
             rec.schedule_line_ids.unlink()
