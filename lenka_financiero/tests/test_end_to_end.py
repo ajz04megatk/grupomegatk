@@ -267,3 +267,52 @@ class TestLenkaEndToEnd(TransactionCase):
         operation.action_activate()
         with self.assertRaises(ValidationError):
             disbursement.action_cancel()
+
+
+    def test_approval_requires_guarantor_or_guarantee(self):
+        from odoo.exceptions import ValidationError
+        operation = self.env['lenka.financial.operation'].create({
+            'partner_id': self.client.id,
+            'operation_type': 'loan',
+            'principal_amount': 25000.0,
+            'interest_rate': 2.0,
+            'rate_period': 'monthly',
+            'term_months': 6,
+            'calculation_method': 'level',
+            'is_quote': False,
+            'state': 'review',
+        })
+        operation.action_generate_schedule()
+        with self.assertRaises(ValidationError):
+            operation.action_approve()
+
+    def test_mark_contracted_requires_signed_attachment(self):
+        from odoo.exceptions import ValidationError
+        operation = self.env['lenka.financial.operation'].create({
+            'partner_id': self.client.id,
+            'guarantor_ids': [(6, 0, [self.guarantor.id])],
+            'operation_type': 'loan',
+            'principal_amount': 25000.0,
+            'interest_rate': 2.0,
+            'rate_period': 'monthly',
+            'term_months': 6,
+            'calculation_method': 'level',
+            'is_quote': False,
+            'state': 'review',
+        })
+        operation.action_generate_schedule()
+        operation.action_approve()
+        template = self.env['lenka.contract.template'].create({
+            'name': 'Contrato sin evidencia adjunta',
+            'company_id': self.company.id,
+            'document_type': 'contract',
+            'operation_type': 'loan',
+            'body_html': '<p>{{CLIENTE}}</p>',
+        })
+        operation.action_generate_contract_documents()
+        document = operation.generated_document_ids.filtered(lambda d: d.template_id == template)[:1]
+        self.assertTrue(document)
+        document.write({'state': 'signed'})
+        operation.write({'contract_signed': True})
+        with self.assertRaises(ValidationError):
+            operation.action_mark_contracted()
