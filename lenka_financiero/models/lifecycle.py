@@ -157,9 +157,20 @@ class LenkaDisbursement(models.Model):
                 raise ValidationError(_('El desembolso excede el monto financiado.'))
             if rec.funding_line_id and rec.funding_line_id.operation_id != rec.operation_id:
                 raise ValidationError(_('La fuente de fondeo no pertenece a esta operacion.'))
+            if rec.funding_line_id:
+                used_source = sum(rec.operation_id.disbursement_ids.filtered(
+                    lambda d: d.state == 'posted' and d.id != rec.id and d.funding_line_id == rec.funding_line_id
+                ).mapped('amount'))
+                if used_source + rec.amount > rec.funding_line_id.amount + 0.01:
+                    raise ValidationError(_('El desembolso excede el monto disponible en la fuente de fondeo seleccionada.'))
             rec.state = 'posted'
         return True
 
     def action_cancel(self):
-        self.write({'state': 'cancelled'})
+        for rec in self:
+            if rec.move_id and rec.move_id.state == 'posted':
+                raise ValidationError(_('No se puede anular el desembolso mientras su asiento contable este publicado. Debe revertirse primero en Contabilidad.'))
+            if rec.operation_id.state == 'active':
+                raise ValidationError(_('No se puede anular un desembolso de una operacion activa sin reestructurar primero la operacion.'))
+            rec.state = 'cancelled'
         return True
