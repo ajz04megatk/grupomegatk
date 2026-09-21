@@ -141,3 +141,31 @@ class TestLenkaInvestment(TransactionCase):
         })
         with self.assertRaises(ValidationError):
             investment.action_activate()
+
+
+    def test_interest_tax_is_split_into_gross_tax_and_net(self):
+        investment = self._investment()
+        interest = self.env['lenka.investment.interest'].create({
+            'investment_id': investment.id,
+            'period_date': fields.Date.context_today(self.env.user),
+            'base_amount': 100000.0,
+            'rate': 1.0,
+            'amount': 1000.0,
+            'tax_rate': 10.0,
+            'state': 'accrued',
+        })
+        self.assertAlmostEqual(interest.tax_amount, 100.0, places=2)
+        self.assertAlmostEqual(interest.net_amount, 900.0, places=2)
+
+    def test_interest_tax_rate_must_be_valid_percentage(self):
+        investment = self._investment()
+        with self.assertRaises(ValidationError):
+            self.env['lenka.investment.interest'].create({
+                'investment_id': investment.id,
+                'period_date': fields.Date.context_today(self.env.user),
+                'base_amount': 100000.0,
+                'rate': 1.0,
+                'amount': 1000.0,
+                'tax_rate': 101.0,
+                'state': 'accrued',
+            })
