@@ -36,6 +36,8 @@ class LenkaFinancialOperationLifecycle(models.Model):
             missing.append(_('plazo'))
         if self.calculation_method != 'custom' and not self.schedule_line_ids:
             missing.append(_('tabla de amortizacion'))
+        if not self.guarantor_ids and not self.guarantee_ids:
+            missing.append(_('aval o garantia'))
         required_docs = self.document_ids.filtered(lambda d: d.required)
         missing_docs = required_docs.filtered(lambda d: d.state != 'received' or not d.attachment_id)
         if missing_docs:
@@ -61,6 +63,9 @@ class LenkaFinancialOperationLifecycle(models.Model):
                 raise ValidationError(_('La operacion debe estar aprobada antes de contratarse.'))
             if not rec.contract_signed:
                 raise ValidationError(_('Debe marcar el contrato como firmado.'))
+            signed_contract = rec.generated_document_ids.filtered(lambda d: d.document_type == 'contract' and d.state == 'signed' and d.attachment_id)
+            if not signed_contract:
+                raise ValidationError(_('Debe existir un contrato generado, firmado y adjunto antes de contratar la operacion.'))
             rec.write({'state': 'contracted', 'contract_date': rec.contract_date or fields.Date.context_today(rec)})
         return True
 
