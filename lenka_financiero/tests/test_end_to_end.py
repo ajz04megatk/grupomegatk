@@ -92,7 +92,7 @@ class TestLenkaEndToEnd(TransactionCase):
         operation.action_mark_contracted()
         self.assertEqual(operation.state, 'contracted')
 
-        self.env['lenka.funding.line'].create({
+        funding = self.env['lenka.funding.line'].create({
             'operation_id': operation.id,
             'source_type': 'own',
             'reference': 'Fondeo E2E',
@@ -107,6 +107,7 @@ class TestLenkaEndToEnd(TransactionCase):
             'destination_type': 'client',
             'destination_partner_id': self.client.id,
             'payment_method': 'transfer',
+            'funding_line_id': funding.id,
         })
         disbursement.action_post()
         self.assertEqual(disbursement.state, 'posted')
@@ -182,3 +183,44 @@ class TestLenkaEndToEnd(TransactionCase):
         withdrawal.action_create_account_move()
         self.assertTrue(withdrawal.move_id)
         self.assertEqual(withdrawal.move_id.state, 'draft')
+
+
+    def test_disbursement_cannot_exceed_selected_funding_source(self):
+        from odoo.exceptions import ValidationError
+        operation = self.env['lenka.financial.operation'].create({
+            'partner_id': self.client.id,
+            'operation_type': 'loan',
+            'principal_amount': 100000.0,
+            'interest_rate': 2.0,
+            'rate_period': 'monthly',
+            'term_months': 12,
+            'calculation_method': 'level',
+            'is_quote': False,
+            'state': 'contracted',
+            'contract_signed': True,
+        })
+        operation.action_generate_schedule()
+        source_a = self.env['lenka.funding.line'].create({
+            'operation_id': operation.id,
+            'source_type': 'own',
+            'amount': 60000.0,
+            'cost_rate': 0.0,
+            'cost_period': 'annual',
+        })
+        self.env['lenka.funding.line'].create({
+            'operation_id': operation.id,
+            'source_type': 'bank_loan',
+            'amount': 40000.0,
+            'cost_rate': 15.0,
+            'cost_period': 'annual',
+        })
+        disbursement = self.env['lenka.disbursement'].create({
+            'operation_id': operation.id,
+            'amount': 70000.0,
+            'funding_line_id': source_a.id,
+            'destination_type': 'client',
+            'destination_partner_id': self.client.id,
+            'payment_method': 'transfer',
+        })
+        with self.assertRaises(ValidationError):
+            disbursement.action_post()
