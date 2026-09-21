@@ -12,6 +12,14 @@
         <field name="phone">9999-0002</field>
     </record>
 
+    <record id="partner_lenka_demo_banco" model="res.partner">
+        <field name="name">Banco Demo Lenka</field>
+    </record>
+
+    <record id="partner_lenka_demo_tarjeta" model="res.partner">
+        <field name="name">Emisor Tarjeta Empresarial Demo</field>
+    </record>
+
     <record id="partner_lenka_demo_inversionista" model="res.partner">
         <field name="name">Inversionista Demo Lenka</field>
         <field name="email">inversionista.demo@lenka.test</field>
@@ -43,6 +51,7 @@
     <record id="funding_lenka_demo_bank" model="lenka.funding.line">
         <field name="operation_id" ref="operation_lenka_demo_financing"/>
         <field name="source_type">bank_loan</field>
+        <field name="partner_id" ref="partner_lenka_demo_banco"/>
         <field name="reference">Prestamo bancario demo 15% anual</field>
         <field name="amount">80000.00</field>
         <field name="cost_rate">15.0</field>
@@ -61,6 +70,7 @@
     <record id="funding_lenka_demo_card" model="lenka.funding.line">
         <field name="operation_id" ref="operation_lenka_demo_financing"/>
         <field name="source_type">credit_card</field>
+        <field name="partner_id" ref="partner_lenka_demo_tarjeta"/>
         <field name="reference">Tarjeta empresarial demo</field>
         <field name="amount">20000.00</field>
         <field name="cost_rate">3.5</field>
