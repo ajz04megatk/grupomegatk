@@ -8,6 +8,7 @@ class ResCompanyLenkaInvestmentAccounting(models.Model):
     lenka_investment_journal_id = fields.Many2one('account.journal', string='Lenka: Diario de inversiones')
     lenka_investor_liability_account_id = fields.Many2one('account.account', string='Lenka: Obligacion con inversionistas')
     lenka_passive_interest_expense_account_id = fields.Many2one('account.account', string='Lenka: Gasto por intereses pasivos')
+    lenka_passive_interest_tax_payable_account_id = fields.Many2one('account.account', string='Lenka: Retencion por pagar sobre intereses pasivos')
 
 
 class ResConfigSettingsLenkaInvestmentAccounting(models.TransientModel):
@@ -16,6 +17,7 @@ class ResConfigSettingsLenkaInvestmentAccounting(models.TransientModel):
     lenka_investment_journal_id = fields.Many2one(related='company_id.lenka_investment_journal_id', readonly=False)
     lenka_investor_liability_account_id = fields.Many2one(related='company_id.lenka_investor_liability_account_id', readonly=False)
     lenka_passive_interest_expense_account_id = fields.Many2one(related='company_id.lenka_passive_interest_expense_account_id', readonly=False)
+    lenka_passive_interest_tax_payable_account_id = fields.Many2one(related='company_id.lenka_passive_interest_tax_payable_account_id', readonly=False)
 
 
 class LenkaInvestmentAccounting(models.Model):
