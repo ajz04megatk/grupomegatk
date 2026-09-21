@@ -210,6 +210,7 @@ class TestLenkaEndToEnd(TransactionCase):
         self.env['lenka.funding.line'].create({
             'operation_id': operation.id,
             'source_type': 'bank_loan',
+            'partner_id': self.investor.id,
             'amount': 40000.0,
             'cost_rate': 15.0,
             'cost_period': 'annual',
