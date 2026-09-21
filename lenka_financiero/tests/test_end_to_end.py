@@ -86,6 +86,12 @@ class TestLenkaEndToEnd(TransactionCase):
         self.assertEqual(document.state, 'generated')
         self.assertIn(self.client.name, document.rendered_html)
 
+        document.attachment_id = self.env['ir.attachment'].create({
+            'name': 'contrato-e2e-firmado.pdf',
+            'datas': 'RklSTUFETw==',
+            'res_model': 'lenka.generated.document',
+            'res_id': document.id,
+        })
         document.action_mark_signed()
         self.assertTrue(operation.contract_signed)
 
