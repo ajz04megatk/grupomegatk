@@ -247,6 +247,7 @@ class LenkaFinancialOperationPaymentMixin(models.Model):
             if unapplied > 0.01:
                 raise ValidationError(_('Existen cobros con saldo sin aplicar. Regularice esos valores antes de cerrar la operacion.'))
             rec.state = 'done'
+            rec.guarantee_ids.filtered(lambda g: g.state in ('accepted', 'active')).write({'state': 'release_pending'})
         return True
 
 
