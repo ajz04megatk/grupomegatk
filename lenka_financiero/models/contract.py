@@ -69,6 +69,8 @@ class LenkaGeneratedDocument(models.Model):
         for rec in self:
             if rec.state != 'generated':
                 raise ValidationError(_('El documento debe estar generado antes de marcarlo como firmado.'))
+            if rec.document_type == 'contract' and not rec.attachment_id:
+                raise ValidationError(_('Adjunte el contrato firmado antes de marcarlo como firmado.'))
             rec.write({
                 'state': 'signed',
                 'signed_date': fields.Date.context_today(rec),
@@ -124,6 +126,8 @@ class LenkaFinancialOperationContract(models.Model):
 
     def _render_lenka_template(self, template):
         self.ensure_one()
+        if template.company_id != self.company_id:
+            raise ValidationError(_('La plantilla contractual pertenece a otra empresa.'))
         if template.operation_type not in ('all', self.operation_type):
             raise ValidationError(_('La plantilla seleccionada no corresponde al tipo de operacion.'))
         body = template.body_html or ''
