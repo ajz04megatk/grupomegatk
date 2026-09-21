@@ -224,3 +224,39 @@ class TestLenkaEndToEnd(TransactionCase):
         })
         with self.assertRaises(ValidationError):
             disbursement.action_post()
+
+
+    def test_active_operation_disbursement_cannot_be_cancelled(self):
+        from odoo.exceptions import ValidationError
+        operation = self.env['lenka.financial.operation'].create({
+            'partner_id': self.client.id,
+            'operation_type': 'loan',
+            'principal_amount': 50000.0,
+            'interest_rate': 2.0,
+            'rate_period': 'monthly',
+            'term_months': 6,
+            'calculation_method': 'level',
+            'is_quote': False,
+            'state': 'contracted',
+            'contract_signed': True,
+        })
+        operation.action_generate_schedule()
+        funding = self.env['lenka.funding.line'].create({
+            'operation_id': operation.id,
+            'source_type': 'own',
+            'amount': 50000.0,
+            'cost_rate': 0.0,
+            'cost_period': 'annual',
+        })
+        disbursement = self.env['lenka.disbursement'].create({
+            'operation_id': operation.id,
+            'amount': 50000.0,
+            'funding_line_id': funding.id,
+            'destination_type': 'client',
+            'destination_partner_id': self.client.id,
+            'payment_method': 'transfer',
+        })
+        disbursement.action_post()
+        operation.action_activate()
+        with self.assertRaises(ValidationError):
+            disbursement.action_cancel()
