@@ -279,5 +279,14 @@ class LenkaGuarantee(models.Model):
     serial_reference = fields.Char(string='Serie / VIN / Matricula')
     state = fields.Selection([
         ('proposed', 'Propuesta'), ('accepted', 'Aceptada'), ('active', 'Vigente'),
-        ('released', 'Liberada'), ('executed', 'Ejecutada')
+        ('release_pending', 'Pendiente de liberar'), ('released', 'Liberada'), ('executed', 'Ejecutada')
     ], default='proposed')
+
+    def action_release(self):
+        for rec in self:
+            if rec.operation_id.state != 'done':
+                raise ValidationError(_('La garantia solo puede liberarse cuando la operacion esta finalizada.'))
+            if rec.state not in ('release_pending', 'active', 'accepted'):
+                raise ValidationError(_('La garantia no esta disponible para liberacion.'))
+            rec.state = 'released'
+        return True
