@@ -90,36 +90,52 @@ class LenkaInvestmentInterestAccounting(models.Model):
             journal = company.lenka_investment_journal_id
             liability = company.lenka_investor_liability_account_id
             expense = company.lenka_passive_interest_expense_account_id
+            tax_payable = company.lenka_passive_interest_tax_payable_account_id
             if not journal or not liability or not expense:
                 raise ValidationError(_('Configure diario, obligacion con inversionistas y gasto de intereses pasivos.'))
+            if rec.tax_amount and not tax_payable:
+                raise ValidationError(_('Configure la cuenta de retencion por pagar sobre intereses pasivos.'))
             if journal.company_id != company:
                 raise ValidationError(_('El diario de inversiones debe pertenecer a la misma empresa.'))
-            amount_company = investment.currency_id._convert(rec.amount, company.currency_id, company, rec.period_date)
+            gross_company = investment.currency_id._convert(rec.amount, company.currency_id, company, rec.period_date)
+            net_company = investment.currency_id._convert(rec.net_amount, company.currency_id, company, rec.period_date)
+            tax_company = investment.currency_id._convert(rec.tax_amount, company.currency_id, company, rec.period_date)
+            lines = [
+                (0, 0, {
+                    'name': _('Gasto interes pasivo - %s') % investment.name,
+                    'partner_id': investment.partner_id.id,
+                    'account_id': expense.id,
+                    'debit': gross_company,
+                    'credit': 0.0,
+                    'currency_id': investment.currency_id.id,
+                    'amount_currency': rec.amount,
+                }),
+                (0, 0, {
+                    'name': _('Interes neto por pagar / capitalizar - %s') % investment.name,
+                    'partner_id': investment.partner_id.id,
+                    'account_id': liability.id,
+                    'debit': 0.0,
+                    'credit': net_company,
+                    'currency_id': investment.currency_id.id,
+                    'amount_currency': -rec.net_amount,
+                }),
+            ]
+            if rec.tax_amount:
+                lines.append((0, 0, {
+                    'name': _('Retencion sobre intereses pasivos - %s') % investment.name,
+                    'partner_id': investment.partner_id.id,
+                    'account_id': tax_payable.id,
+                    'debit': 0.0,
+                    'credit': tax_company,
+                    'currency_id': investment.currency_id.id,
+                    'amount_currency': -rec.tax_amount,
+                }))
             move = self.env['account.move'].with_company(company).create({
                 'move_type': 'entry',
                 'date': rec.period_date,
                 'journal_id': journal.id,
                 'ref': '%s - Interes pasivo' % investment.name,
-                'line_ids': [
-                    (0, 0, {
-                        'name': _('Gasto interes pasivo - %s') % investment.name,
-                        'partner_id': investment.partner_id.id,
-                        'account_id': expense.id,
-                        'debit': amount_company,
-                        'credit': 0.0,
-                        'currency_id': investment.currency_id.id,
-                        'amount_currency': rec.amount,
-                    }),
-                    (0, 0, {
-                        'name': _('Interes por pagar / capitalizado - %s') % investment.name,
-                        'partner_id': investment.partner_id.id,
-                        'account_id': liability.id,
-                        'debit': 0.0,
-                        'credit': amount_company,
-                        'currency_id': investment.currency_id.id,
-                        'amount_currency': -rec.amount,
-                    }),
-                ],
+                'line_ids': lines,
             })
             rec.move_id = move.id
         return True
