@@ -35,6 +35,7 @@ class LenkaInvestment(models.Model):
     withdrawal_ids = fields.One2many('lenka.investment.withdrawal', 'investment_id', string='Retiros')
     accrued_interest = fields.Monetary(string='Interes acumulado', compute='_compute_totals')
     paid_interest = fields.Monetary(string='Interes pagado', compute='_compute_totals')
+    withheld_interest_tax = fields.Monetary(string='Impuesto retenido sobre intereses', compute='_compute_totals')
     withdrawn_principal = fields.Monetary(string='Capital retirado', compute='_compute_totals')
     outstanding_principal = fields.Monetary(string='Capital vigente', compute='_compute_totals')
     notes = fields.Text(string='Observaciones')
@@ -63,7 +64,8 @@ class LenkaInvestment(models.Model):
         for rec in self:
             posted_interest = rec.interest_line_ids.filtered(lambda l: l.state in ('accrued', 'paid'))
             rec.accrued_interest = sum(posted_interest.mapped('amount'))
-            rec.paid_interest = sum(rec.interest_line_ids.filtered(lambda l: l.state == 'paid').mapped('amount'))
+            rec.paid_interest = sum(rec.interest_line_ids.filtered(lambda l: l.state == 'paid').mapped('net_amount'))
+            rec.withheld_interest_tax = sum(posted_interest.mapped('tax_amount'))
             rec.withdrawn_principal = sum(rec.withdrawal_ids.filtered(lambda w: w.state == 'posted').mapped('principal_amount'))
             rec.outstanding_principal = max(rec.principal_amount - rec.withdrawn_principal, 0.0)
 
@@ -153,10 +155,33 @@ class LenkaInvestmentInterest(models.Model):
     period_date = fields.Date(string='Fecha periodo', required=True)
     base_amount = fields.Monetary(string='Base')
     rate = fields.Float(string='Tasa (%)')
-    amount = fields.Monetary(string='Interes', required=True)
+    amount = fields.Monetary(string='Interes bruto', required=True)
+    tax_rate = fields.Float(string='Impuesto sobre interes (%)', default=lambda self: self._default_tax_rate())
+    tax_amount = fields.Monetary(string='Impuesto retenido', compute='_compute_tax', store=True)
+    net_amount = fields.Monetary(string='Interes neto', compute='_compute_tax', store=True)
     state = fields.Selection([('draft', 'Borrador'), ('accrued', 'Devengado'), ('paid', 'Pagado'), ('cancelled', 'Anulado')], default='draft')
     payment_reference = fields.Char(string='Referencia de pago')
 
+
+    def _default_tax_rate(self):
+        value = self.env['ir.config_parameter'].sudo().get_param('lenka_financiero.passive_interest_tax_rate', '0')
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    @api.depends('amount', 'tax_rate')
+    def _compute_tax(self):
+        for rec in self:
+            rate = min(max(rec.tax_rate or 0.0, 0.0), 100.0) / 100.0
+            rec.tax_amount = rec.amount * rate
+            rec.net_amount = rec.amount - rec.tax_amount
+
+    @api.constrains('tax_rate')
+    def _check_tax_rate(self):
+        for rec in self:
+            if rec.tax_rate < 0 or rec.tax_rate > 100:
+                raise ValidationError(_('El impuesto sobre intereses debe estar entre 0% y 100%.'))
 
 class LenkaInvestmentWithdrawal(models.Model):
     _name = 'lenka.investment.withdrawal'
