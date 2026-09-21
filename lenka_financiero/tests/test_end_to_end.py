@@ -316,3 +316,27 @@ class TestLenkaEndToEnd(TransactionCase):
         operation.write({'contract_signed': True})
         with self.assertRaises(ValidationError):
             operation.action_mark_contracted()
+
+
+    def test_schedule_cannot_be_replaced_after_disbursement(self):
+        from odoo.exceptions import ValidationError
+        operation = self.env['lenka.financial.operation'].create({
+            'partner_id': self.client.id,
+            'guarantor_ids': [(6, 0, [self.guarantor.id])],
+            'operation_type': 'loan',
+            'principal_amount': 30000.0,
+            'interest_rate': 2.0,
+            'rate_period': 'monthly',
+            'term_months': 6,
+            'calculation_method': 'level',
+            'is_quote': False,
+            'state': 'contracted',
+        })
+        operation.action_generate_schedule()
+        self.env['lenka.disbursement'].create({
+            'operation_id': operation.id,
+            'amount': 30000.0,
+            'state': 'posted',
+        })
+        with self.assertRaises(ValidationError):
+            operation.action_generate_schedule()
