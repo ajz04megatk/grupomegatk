@@ -236,6 +236,19 @@ class LenkaFinancialOperationPaymentMixin(models.Model):
         pending_late = sum(max(l.late_fee_due - l.late_fee_paid, 0.0) for l in self.schedule_line_ids)
         return self.outstanding_capital + pending_interest + pending_late
 
+    def action_close_paid_operation(self):
+        for rec in self:
+            if rec.state != 'active':
+                raise ValidationError(_('Solo una operacion activa puede cerrarse por pago total.'))
+            payoff = rec.get_payoff_amount()
+            if payoff > 0.01:
+                raise ValidationError(_('La operacion aun tiene saldo pendiente de %.2f %s.') % (payoff, rec.currency_id.name))
+            unapplied = sum(rec.payment_ids.filtered(lambda p: p.state == 'posted').mapped('unapplied_amount'))
+            if unapplied > 0.01:
+                raise ValidationError(_('Existen cobros con saldo sin aplicar. Regularice esos valores antes de cerrar la operacion.'))
+            rec.state = 'done'
+        return True
+
 
 class LenkaAmortizationPaymentMixin(models.Model):
     _inherit = 'lenka.amortization.line'
