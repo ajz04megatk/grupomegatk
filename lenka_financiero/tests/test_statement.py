@@ -20,9 +20,10 @@ class TestLenkaStatement(TransactionCase):
             'rate_period': 'monthly',
             'term_months': 12,
             'calculation_method': 'level',
-            'state': 'active',
+            'state': 'review',
         })
         cls.operation.action_generate_schedule()
+        cls.operation.state = 'active'
 
     def test_operation_statement_balance_uses_capital_only(self):
         first = self.operation.schedule_line_ids.sorted('sequence')[0]
