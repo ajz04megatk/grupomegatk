@@ -100,6 +100,9 @@ class LenkaFinancialOperation(models.Model):
         for rec in self.filtered(lambda r: r.funding_line_ids):
             if any(line.amount <= 0 for line in rec.funding_line_ids):
                 raise ValidationError(_('Cada fuente de fondeo debe tener un monto mayor que cero.'))
+            total = sum(rec.funding_line_ids.mapped('amount'))
+            if total > rec.financed_amount + 0.01:
+                raise ValidationError(_('El fondeo total no puede exceder el monto financiado.'))
 
     def _monthly_rate(self):
         self.ensure_one()
@@ -253,6 +256,8 @@ class LenkaFundingLine(models.Model):
                 raise ValidationError(_('El monto de fondeo debe ser mayor que cero.'))
             if rec.cost_rate < 0:
                 raise ValidationError(_('El costo financiero no puede ser negativo.'))
+            if rec.source_type in ('bank_loan', 'credit_card', 'investor', 'third_party') and not rec.partner_id:
+                raise ValidationError(_('Seleccione el banco, inversionista o tercero que proporciona esta fuente de fondeo.'))
 
 
 class LenkaGuarantee(models.Model):
