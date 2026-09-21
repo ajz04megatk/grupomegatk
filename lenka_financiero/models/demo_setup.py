@@ -31,6 +31,9 @@ class LenkaDemoSetup(models.TransientModel):
                 'phone': '9999-0002',
             })
 
+        bank = Partner.search([('name', '=', 'Banco Demo Lenka')], limit=1) or Partner.create({'name': 'Banco Demo Lenka'})
+        card_issuer = Partner.search([('name', '=', 'Emisor Tarjeta Empresarial Demo')], limit=1) or Partner.create({'name': 'Emisor Tarjeta Empresarial Demo'})
+
         investor = Partner.search([('email', '=', 'inversionista.demo@lenka.test')], limit=1)
         if not investor:
             investor = Partner.create({
@@ -71,6 +74,7 @@ class LenkaDemoSetup(models.TransientModel):
                 {
                     'operation_id': financing.id,
                     'source_type': 'bank_loan',
+                    'partner_id': bank.id,
                     'reference': 'Prestamo bancario demo 15% anual',
                     'amount': 80000.0,
                     'cost_rate': 15.0,
@@ -87,6 +91,7 @@ class LenkaDemoSetup(models.TransientModel):
                 {
                     'operation_id': financing.id,
                     'source_type': 'credit_card',
+                    'partner_id': card_issuer.id,
                     'reference': 'Tarjeta empresarial demo',
                     'amount': 20000.0,
                     'cost_rate': 3.5,
