@@ -314,3 +314,39 @@ class TestLenkaInvestment(TransactionCase):
         self.assertFalse(investment.interest_line_ids.filtered(lambda l: l.state == 'accrued'))
         self.assertAlmostEqual(investment.outstanding_principal, 75000.0, places=2)
         self.assertNotEqual(investment.state, 'closed')
+
+
+    def test_withdrawal_tracks_gross_tax_and_net_interest(self):
+        today = fields.Date.context_today(self.env.user)
+        investment = self._investment(
+            start_date=fields.Date.add(today, months=-1),
+            maturity_date=today,
+            term_months=1,
+        )
+        interest = self.env['lenka.investment.interest'].create({
+            'investment_id': investment.id,
+            'period_date': today,
+            'base_amount': 100000.0,
+            'rate': 1.0,
+            'amount': 1000.0,
+            'tax_rate': 10.0,
+            'state': 'accrued',
+        })
+        withdrawal = self.env['lenka.investment.withdrawal'].create({
+            'investment_id': investment.id,
+            'principal_amount': 25000.0,
+            'date': today,
+        })
+        withdrawal.action_post()
+        self.assertGreaterEqual(withdrawal.gross_interest_amount, interest.amount)
+        self.assertGreaterEqual(withdrawal.interest_tax_amount, interest.tax_amount)
+        self.assertAlmostEqual(
+            withdrawal.accrued_interest_amount,
+            withdrawal.gross_interest_amount - withdrawal.interest_tax_amount,
+            places=2,
+        )
+        self.assertAlmostEqual(
+            withdrawal.total_amount,
+            withdrawal.principal_amount + withdrawal.accrued_interest_amount,
+            places=2,
+        )
