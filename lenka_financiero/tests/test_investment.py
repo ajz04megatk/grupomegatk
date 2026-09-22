@@ -199,6 +199,8 @@ class TestLenkaInvestment(TransactionCase):
             'tax_rate': 10.0,
             'state': 'accrued',
         })
+        investment.action_generate_monthly_interest()
+        expected_pending_net = sum(investment.interest_line_ids.filtered(lambda l: l.state == 'accrued').mapped('net_amount'))
         withdrawal = self.env['lenka.investment.withdrawal'].create({
             'investment_id': investment.id,
             'principal_amount': 100000.0,
@@ -206,7 +208,8 @@ class TestLenkaInvestment(TransactionCase):
         })
         withdrawal.action_post()
         self.assertFalse(withdrawal.early_withdrawal)
-        self.assertAlmostEqual(withdrawal.accrued_interest_amount, pending.net_amount, places=2)
+        self.assertGreaterEqual(expected_pending_net, pending.net_amount)
+        self.assertAlmostEqual(withdrawal.accrued_interest_amount, expected_pending_net, places=2)
         self.assertEqual(investment.state, 'closed')
 
     def test_partial_maturity_withdrawal_keeps_investment_open(self):
