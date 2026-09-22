@@ -169,3 +169,58 @@ class TestLenkaInvestment(TransactionCase):
                 'tax_rate': 101.0,
                 'state': 'accrued',
             })
+
+
+    def test_maturity_withdrawal_uses_only_unpaid_net_interest(self):
+        today = fields.Date.context_today(self.env.user)
+        investment = self._investment(
+            passive_rate=1.5,
+            early_withdrawal_rate=1.0,
+            rate_period='monthly',
+            start_date=fields.Date.add(today, months=-3),
+            maturity_date=today,
+            term_months=3,
+        )
+        self.env['lenka.investment.interest'].create({
+            'investment_id': investment.id,
+            'period_date': fields.Date.add(today, months=-2),
+            'base_amount': 100000.0,
+            'rate': 1.5,
+            'amount': 1500.0,
+            'tax_rate': 10.0,
+            'state': 'paid',
+        })
+        pending = self.env['lenka.investment.interest'].create({
+            'investment_id': investment.id,
+            'period_date': fields.Date.add(today, months=-1),
+            'base_amount': 101500.0,
+            'rate': 1.5,
+            'amount': 1522.50,
+            'tax_rate': 10.0,
+            'state': 'accrued',
+        })
+        withdrawal = self.env['lenka.investment.withdrawal'].create({
+            'investment_id': investment.id,
+            'principal_amount': 100000.0,
+            'date': today,
+        })
+        withdrawal.action_post()
+        self.assertFalse(withdrawal.early_withdrawal)
+        self.assertAlmostEqual(withdrawal.accrued_interest_amount, pending.net_amount, places=2)
+        self.assertEqual(investment.state, 'closed')
+
+    def test_partial_maturity_withdrawal_keeps_investment_open(self):
+        today = fields.Date.context_today(self.env.user)
+        investment = self._investment(
+            start_date=fields.Date.add(today, months=-12),
+            maturity_date=today,
+            term_months=12,
+        )
+        withdrawal = self.env['lenka.investment.withdrawal'].create({
+            'investment_id': investment.id,
+            'principal_amount': 25000.0,
+            'date': today,
+        })
+        withdrawal.action_post()
+        self.assertAlmostEqual(investment.outstanding_principal, 75000.0, places=2)
+        self.assertNotEqual(investment.state, 'closed')
