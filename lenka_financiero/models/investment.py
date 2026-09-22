@@ -132,6 +132,17 @@ class LenkaInvestment(models.Model):
                 rec.state = 'matured'
         return True
 
+    def action_mark_matured(self):
+        today = fields.Date.context_today(self)
+        for rec in self:
+            if rec.state != 'active':
+                continue
+            if not rec.maturity_date or rec.maturity_date > today:
+                continue
+            rec.action_generate_monthly_interest()
+            rec.state = 'matured'
+        return True
+
     def action_recalculate_early_withdrawal(self, withdrawal_date):
         self.ensure_one()
         if not self.maturity_date or withdrawal_date >= self.maturity_date:
