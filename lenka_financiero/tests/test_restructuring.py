@@ -118,3 +118,44 @@ class TestLenkaRestructuring(TransactionCase):
             restructuring.write({'proposed_interest_rate': 4.0})
         with self.assertRaises(ValidationError):
             restructuring.write({'proposed_term_months': 24})
+
+
+    def test_original_cannot_close_until_successor_is_active(self):
+        restructuring = self.env['lenka.restructuring'].create({
+            'operation_id': self.operation.id,
+            'reason': 'Sustitucion pendiente de activar',
+            'proposed_principal_amount': self.operation.outstanding_capital,
+            'proposed_interest_rate': 2.5,
+            'proposed_term_months': 18,
+        })
+        restructuring.action_submit()
+        restructuring.action_approve()
+        restructuring.action_prepare_successor()
+        self.assertEqual(restructuring.successor_operation_id.state, 'review')
+        with self.assertRaises(ValidationError):
+            restructuring.action_complete_restructuring()
+        self.assertEqual(self.operation.state, 'active')
+        self.assertFalse(restructuring.original_operation_closed)
+
+    def test_complete_restructuring_closes_original_only_after_successor_active(self):
+        guarantee = self.env['lenka.guarantee'].create({
+            'operation_id': self.operation.id,
+            'guarantee_type': 'equipment',
+            'description': 'Garantia de operacion reestructurada',
+            'state': 'active',
+        })
+        restructuring = self.env['lenka.restructuring'].create({
+            'operation_id': self.operation.id,
+            'reason': 'Sustitucion completa',
+            'proposed_principal_amount': self.operation.outstanding_capital,
+            'proposed_interest_rate': 2.5,
+            'proposed_term_months': 18,
+        })
+        restructuring.action_submit()
+        restructuring.action_approve()
+        restructuring.action_prepare_successor()
+        restructuring.successor_operation_id.state = 'active'
+        restructuring.action_complete_restructuring()
+        self.assertEqual(self.operation.state, 'done')
+        self.assertTrue(restructuring.original_operation_closed)
+        self.assertEqual(guarantee.state, 'release_pending')
