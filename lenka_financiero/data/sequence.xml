@@ -42,4 +42,11 @@
         <field name="padding">6</field>
         <field name="company_id" eval="False"/>
     </record>
+    <record id="seq_lenka_restructuring" model="ir.sequence">
+        <field name="name">Reestructuracion Financiera Lenka</field>
+        <field name="code">lenka.restructuring</field>
+        <field name="prefix">LENKA-RE-</field>
+        <field name="padding">6</field>
+        <field name="company_id" eval="False"/>
+    </record>
 </odoo>
