@@ -291,3 +291,26 @@ class TestLenkaInvestment(TransactionCase):
         self.assertFalse(investment.interest_line_ids.filtered(lambda l: l.state == 'accrued'))
         self.assertTrue(investment.interest_line_ids.filtered(lambda l: l.state == 'paid'))
         self.assertAlmostEqual(investment.outstanding_principal, 0.0, places=2)
+
+
+    def test_partial_maturity_withdrawal_marks_included_interest_paid(self):
+        today = fields.Date.context_today(self.env.user)
+        investment = self._investment(
+            start_date=fields.Date.add(today, months=-3),
+            maturity_date=today,
+            term_months=3,
+        )
+        investment.action_generate_monthly_interest()
+        pending_before = investment.interest_line_ids.filtered(lambda l: l.state == 'accrued')
+        expected_net = sum(pending_before.mapped('net_amount'))
+        self.assertGreater(expected_net, 0.0)
+        withdrawal = self.env['lenka.investment.withdrawal'].create({
+            'investment_id': investment.id,
+            'principal_amount': 25000.0,
+            'date': today,
+        })
+        withdrawal.action_post()
+        self.assertAlmostEqual(withdrawal.accrued_interest_amount, expected_net, places=2)
+        self.assertFalse(investment.interest_line_ids.filtered(lambda l: l.state == 'accrued'))
+        self.assertAlmostEqual(investment.outstanding_principal, 75000.0, places=2)
+        self.assertNotEqual(investment.state, 'closed')
