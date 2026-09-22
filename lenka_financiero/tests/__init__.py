@@ -6,3 +6,4 @@ from . import test_payment
 from . import test_end_to_end
 
 from . import test_statement
+from . import test_restructuring
