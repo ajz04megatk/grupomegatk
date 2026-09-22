@@ -204,7 +204,9 @@ class LenkaInvestmentWithdrawal(models.Model):
     currency_id = fields.Many2one(related='investment_id.currency_id', store=True)
     date = fields.Date(required=True, default=fields.Date.context_today)
     principal_amount = fields.Monetary(string='Capital a retirar', required=True)
-    accrued_interest_amount = fields.Monetary(string='Interes reconocido', readonly=True)
+    gross_interest_amount = fields.Monetary(string='Interes bruto reconocido', readonly=True)
+    interest_tax_amount = fields.Monetary(string='Retencion sobre interes', readonly=True)
+    accrued_interest_amount = fields.Monetary(string='Interes neto reconocido', readonly=True)
     early_withdrawal = fields.Boolean(string='Retiro anticipado', compute='_compute_early_withdrawal', store=True)
     effective_rate = fields.Float(string='Tasa efectiva aplicada (%)', readonly=True)
     total_amount = fields.Monetary(string='Total a pagar', compute='_compute_total', store=True)
@@ -242,15 +244,20 @@ class LenkaInvestmentWithdrawal(models.Model):
             if previous_withdrawals and rec.early_withdrawal:
                 raise ValidationError(_('Un segundo retiro anticipado requiere una reestructuracion del contrato. No se recalculara automaticamente para evitar duplicar intereses.'))
             if rec.early_withdrawal:
-                recalculated = investment.action_recalculate_early_withdrawal(rec.date)
+                investment.action_recalculate_early_withdrawal(rec.date)
+                unpaid_interest = investment.interest_line_ids.filtered(lambda l: l.state == 'accrued' and l.period_date <= rec.date)
                 rec.write({
-                    'accrued_interest_amount': recalculated,
+                    'gross_interest_amount': sum(unpaid_interest.mapped('amount')),
+                    'interest_tax_amount': sum(unpaid_interest.mapped('tax_amount')),
+                    'accrued_interest_amount': sum(unpaid_interest.mapped('net_amount')),
                     'effective_rate': investment.early_withdrawal_rate,
                 })
             else:
                 investment.action_generate_monthly_interest()
                 unpaid_interest = investment.interest_line_ids.filtered(lambda l: l.state == 'accrued')
                 rec.write({
+                    'gross_interest_amount': sum(unpaid_interest.mapped('amount')),
+                    'interest_tax_amount': sum(unpaid_interest.mapped('tax_amount')),
                     'accrued_interest_amount': sum(unpaid_interest.mapped('net_amount')),
                     'effective_rate': investment.passive_rate,
                 })
