@@ -227,3 +227,26 @@ class TestLenkaInvestment(TransactionCase):
         withdrawal.action_post()
         self.assertAlmostEqual(investment.outstanding_principal, 75000.0, places=2)
         self.assertNotEqual(investment.state, 'closed')
+
+
+    def test_mark_matured_moves_active_investment_to_matured(self):
+        today = fields.Date.context_today(self.env.user)
+        investment = self._investment(
+            start_date=fields.Date.add(today, months=-12),
+            maturity_date=today,
+            term_months=12,
+        )
+        self.assertEqual(investment.state, 'active')
+        investment.action_mark_matured()
+        self.assertEqual(investment.state, 'matured')
+        self.assertTrue(investment.interest_line_ids)
+
+    def test_not_yet_mature_investment_stays_active(self):
+        today = fields.Date.context_today(self.env.user)
+        investment = self._investment(
+            start_date=today,
+            maturity_date=fields.Date.add(today, months=12),
+            term_months=12,
+        )
+        investment.action_mark_matured()
+        self.assertEqual(investment.state, 'active')
