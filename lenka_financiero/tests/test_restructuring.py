@@ -87,7 +87,7 @@ class TestLenkaRestructuring(TransactionCase):
         payment = self.env['lenka.payment'].create({
             'operation_id': self.operation.id,
             'payment_date': fields.Date.context_today(self.env.user),
-            'amount': 200000.0,
+            'amount': 110000.0,
             'payment_method': 'cash',
         })
         payment.action_post()
@@ -95,7 +95,7 @@ class TestLenkaRestructuring(TransactionCase):
         restructuring = self.env['lenka.restructuring'].create({
             'operation_id': self.operation.id,
             'reason': 'Debe regularizar cobro',
-            'proposed_principal_amount': self.operation.outstanding_capital,
+            'proposed_principal_amount': 1000.0,
             'proposed_interest_rate': 2.0,
             'proposed_term_months': 18,
         })
