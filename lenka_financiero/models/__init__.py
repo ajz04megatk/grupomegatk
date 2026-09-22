@@ -14,3 +14,4 @@ from . import mobile_service
 from . import mobile_access
 
 from . import demo_setup
+from . import restructuring
