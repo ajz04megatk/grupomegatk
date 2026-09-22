@@ -83,6 +83,18 @@ class LenkaRestructuring(models.Model):
             records |= super().create(vals)
         return records
 
+    def write(self, vals):
+        proposal_fields = {
+            'operation_id', 'proposed_principal_amount', 'proposed_interest_rate',
+            'proposed_rate_period', 'proposed_term_months',
+            'proposed_calculation_method', 'reason',
+        }
+        if proposal_fields.intersection(vals):
+            locked = self.filtered(lambda r: r.state in ('approved', 'prepared', 'cancelled'))
+            if locked:
+                raise ValidationError(_('Una reestructuracion aprobada no puede modificarse. Cree una nueva solicitud para conservar la auditoria.'))
+        return super().write(vals)
+
     @api.constrains('proposed_principal_amount', 'proposed_interest_rate', 'proposed_term_months')
     def _check_proposal(self):
         for rec in self:
