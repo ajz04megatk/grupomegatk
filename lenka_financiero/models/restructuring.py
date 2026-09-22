@@ -59,6 +59,7 @@ class LenkaRestructuring(models.Model):
         'lenka.financial.operation', string='Nueva operacion',
         readonly=True, copy=False,
     )
+    original_operation_closed = fields.Boolean(string='Operacion original cerrada', readonly=True, copy=False)
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -152,6 +153,23 @@ class LenkaRestructuring(models.Model):
                 'successor_operation_id': successor.id,
                 'state': 'prepared',
             })
+        return True
+
+    def action_complete_restructuring(self):
+        for rec in self:
+            if rec.state != 'prepared' or not rec.successor_operation_id:
+                raise ValidationError(_('Primero prepare la nueva operacion de la reestructuracion.'))
+            successor = rec.successor_operation_id
+            if successor.state != 'active':
+                raise ValidationError(_('La nueva operacion debe estar contratada, desembolsada y activa antes de cerrar la operacion original.'))
+            original = rec.operation_id
+            if original.state != 'active':
+                raise ValidationError(_('La operacion original debe continuar activa hasta completar la sustitucion.'))
+            if original.payment_ids.filtered(lambda p: p.state == 'posted' and p.unapplied_amount > 0.01):
+                raise ValidationError(_('Existen cobros sin aplicar en la operacion original. Regularicelos antes de completar la reestructuracion.'))
+            original.state = 'done'
+            original.guarantee_ids.filtered(lambda g: g.state in ('accepted', 'active')).write({'state': 'release_pending'})
+            rec.original_operation_closed = True
         return True
 
     def action_cancel(self):
