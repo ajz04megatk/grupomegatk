@@ -95,6 +95,19 @@ class LenkaFinancialOperation(models.Model):
             if rec.balloon_base_payment < 0:
                 raise ValidationError(_('La cuota regular no puede ser negativa.'))
 
+    def write(self, vals):
+        protected = {
+            'partner_id', 'operation_type', 'product_id', 'company_id', 'currency_id',
+            'principal_amount', 'down_payment', 'interest_rate', 'rate_period',
+            'term_months', 'first_payment_date', 'calculation_method',
+            'balloon_base_payment', 'residual_purchase_percent', 'recalculation_policy',
+        }
+        if protected.intersection(vals):
+            locked = self.filtered(lambda r: r.state in ('approved', 'contracted', 'active', 'done'))
+            if locked:
+                raise ValidationError(_('Las condiciones financieras no pueden modificarse despues de aprobar la operacion. Use una reestructuracion para conservar el historial.'))
+        return super().write(vals)
+
     @api.constrains('funding_line_ids')
     def _check_funding_total(self):
         for rec in self.filtered(lambda r: r.funding_line_ids):
