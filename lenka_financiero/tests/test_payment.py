@@ -225,3 +225,36 @@ class TestLenkaPayment(TransactionCase):
         })
         with self.assertRaises(ValidationError):
             payment.action_post()
+
+
+    def test_paid_operation_marks_guarantee_pending_release(self):
+        operation = self._operation()
+        guarantee = self.env['lenka.guarantee'].create({
+            'operation_id': operation.id,
+            'guarantee_type': 'equipment',
+            'description': 'Equipo financiado prueba',
+            'state': 'active',
+        })
+        for line in operation.schedule_line_ids:
+            line.write({
+                'capital_paid': line.capital,
+                'interest_paid': line.interest,
+                'late_fee_paid': line.late_fee_due,
+            })
+        operation.action_close_paid_operation()
+        self.assertEqual(operation.state, 'done')
+        self.assertEqual(guarantee.state, 'release_pending')
+        guarantee.action_release()
+        self.assertEqual(guarantee.state, 'released')
+
+    def test_guarantee_cannot_be_released_with_active_debt(self):
+        from odoo.exceptions import ValidationError
+        operation = self._operation()
+        guarantee = self.env['lenka.guarantee'].create({
+            'operation_id': operation.id,
+            'guarantee_type': 'equipment',
+            'description': 'Equipo aun garantizando deuda',
+            'state': 'active',
+        })
+        with self.assertRaises(ValidationError):
+            guarantee.action_release()
