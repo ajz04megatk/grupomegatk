@@ -118,3 +118,34 @@ class TestLenkaFinancialOperation(TransactionCase):
         })
         with self.assertRaises(ValidationError):
             operation.action_generate_schedule()
+
+
+    def test_approved_operation_financial_terms_are_locked(self):
+        guarantor = self.env['res.partner'].create({'name': 'Aval bloqueo condiciones'})
+        operation = self.env['lenka.financial.operation'].create({
+            'partner_id': self.partner.id,
+            'guarantor_ids': [(6, 0, [guarantor.id])],
+            'operation_type': 'loan',
+            'principal_amount': 100000.0,
+            'interest_rate': 3.0,
+            'rate_period': 'monthly',
+            'term_months': 12,
+            'calculation_method': 'level',
+            'is_quote': False,
+            'state': 'review',
+        })
+        operation.action_generate_schedule()
+        operation.action_approve()
+        with self.assertRaises(ValidationError):
+            operation.write({'interest_rate': 4.0})
+        with self.assertRaises(ValidationError):
+            operation.write({'term_months': 18})
+        with self.assertRaises(ValidationError):
+            operation.write({'principal_amount': 120000.0})
+
+    def test_review_operation_financial_terms_can_still_change(self):
+        operation = self._operation('level')
+        operation.write({'state': 'review'})
+        operation.write({'interest_rate': 4.0, 'term_months': 18})
+        self.assertAlmostEqual(operation.interest_rate, 4.0, places=2)
+        self.assertEqual(operation.term_months, 18)
