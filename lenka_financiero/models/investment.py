@@ -238,8 +238,9 @@ class LenkaInvestmentWithdrawal(models.Model):
                 })
             else:
                 investment.action_generate_monthly_interest()
+                unpaid_interest = investment.interest_line_ids.filtered(lambda l: l.state == 'accrued')
                 rec.write({
-                    'accrued_interest_amount': investment.accrued_interest,
+                    'accrued_interest_amount': sum(unpaid_interest.mapped('net_amount')),
                     'effective_rate': investment.passive_rate,
                 })
             rec.state = 'posted'
