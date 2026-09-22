@@ -256,5 +256,8 @@ class LenkaInvestmentWithdrawal(models.Model):
                 })
             rec.state = 'posted'
             if rec.principal_amount >= investment.outstanding_principal - 0.01:
+                pending_interest = investment.interest_line_ids.filtered(lambda l: l.state == 'accrued')
+                if pending_interest:
+                    pending_interest.write({'state': 'paid'})
                 investment.state = 'closed'
         return True
