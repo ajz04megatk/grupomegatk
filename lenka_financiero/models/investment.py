@@ -59,7 +59,7 @@ class LenkaInvestment(models.Model):
             if rec.maturity_date and rec.maturity_date < rec.start_date:
                 raise ValidationError(_('El vencimiento no puede ser anterior a la fecha de inicio.'))
 
-    @api.depends('interest_line_ids.amount', 'interest_line_ids.state', 'withdrawal_ids.principal_amount', 'withdrawal_ids.state')
+    @api.depends('interest_line_ids.amount', 'interest_line_ids.net_amount', 'interest_line_ids.tax_amount', 'interest_line_ids.state', 'withdrawal_ids.principal_amount', 'withdrawal_ids.state')
     def _compute_totals(self):
         for rec in self:
             posted_interest = rec.interest_line_ids.filtered(lambda l: l.state in ('accrued', 'paid'))
