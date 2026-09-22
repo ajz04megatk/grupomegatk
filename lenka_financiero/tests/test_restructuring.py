@@ -102,3 +102,19 @@ class TestLenkaRestructuring(TransactionCase):
         restructuring.action_submit()
         with self.assertRaises(ValidationError):
             restructuring.action_approve()
+
+
+    def test_approved_restructuring_terms_are_locked(self):
+        restructuring = self.env['lenka.restructuring'].create({
+            'operation_id': self.operation.id,
+            'reason': 'Propuesta que debe quedar congelada',
+            'proposed_principal_amount': self.operation.outstanding_capital,
+            'proposed_interest_rate': 2.5,
+            'proposed_term_months': 18,
+        })
+        restructuring.action_submit()
+        restructuring.action_approve()
+        with self.assertRaises(ValidationError):
+            restructuring.write({'proposed_interest_rate': 4.0})
+        with self.assertRaises(ValidationError):
+            restructuring.write({'proposed_term_months': 24})
