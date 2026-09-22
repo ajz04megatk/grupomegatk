@@ -250,3 +250,23 @@ class TestLenkaInvestment(TransactionCase):
         )
         investment.action_mark_matured()
         self.assertEqual(investment.state, 'active')
+
+
+    def test_full_maturity_withdrawal_marks_pending_interest_paid(self):
+        today = fields.Date.context_today(self.env.user)
+        investment = self._investment(
+            start_date=fields.Date.add(today, months=-2),
+            maturity_date=today,
+            term_months=2,
+        )
+        investment.action_generate_monthly_interest()
+        self.assertTrue(investment.interest_line_ids.filtered(lambda l: l.state == 'accrued'))
+        withdrawal = self.env['lenka.investment.withdrawal'].create({
+            'investment_id': investment.id,
+            'principal_amount': investment.outstanding_principal,
+            'date': today,
+        })
+        withdrawal.action_post()
+        self.assertEqual(investment.state, 'closed')
+        self.assertFalse(investment.interest_line_ids.filtered(lambda l: l.state == 'accrued'))
+        self.assertTrue(investment.interest_line_ids.filtered(lambda l: l.state == 'paid'))
