@@ -223,6 +223,8 @@ class LenkaInvestmentWithdrawalAccounting(models.Model):
             if not liquidity:
                 raise ValidationError(_('El diario de inversiones debe tener una cuenta contable por defecto.'))
             amount = rec.total_amount
+            # La obligacion contable se reduce por capital + interes neto pagado.
+            # La retencion sobre intereses queda separada en su cuenta por pagar.
             amount_company = investment.currency_id._convert(amount, company.currency_id, company, rec.date)
             move = self.env['account.move'].with_company(company).create({
                 'move_type': 'entry',
