@@ -172,10 +172,14 @@ class LenkaDisbursement(models.Model):
         return True
 
     def action_cancel(self):
+        self.check_access('write')
         for rec in self:
             if rec.move_id and rec.move_id.state == 'posted':
                 raise ValidationError(_('No se puede anular el desembolso mientras su asiento contable este publicado. Debe revertirse primero en Contabilidad.'))
-            if rec.operation_id.state == 'active':
+            if rec.operation_id.state in ('active', 'done'):
                 raise ValidationError(_('No se puede anular un desembolso de una operacion activa sin reestructurar primero la operacion.'))
+        for rec in self:
+            if rec.move_id.state == 'draft':
+                rec.move_id.button_cancel()
             rec.state = 'cancelled'
         return True

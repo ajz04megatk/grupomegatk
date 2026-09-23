@@ -236,4 +236,9 @@ class AccountMoveLenkaCollection(models.Model):
         ], limit=1)
         if cancelled_payment:
             raise ValidationError(_('No se puede publicar una partida vinculada a un cobro Lenka anulado.'))
+        cancelled_disbursement = self.env['lenka.disbursement'].sudo().search([
+            ('move_id', 'in', self.ids), ('state', '=', 'cancelled'),
+        ], limit=1)
+        if cancelled_disbursement:
+            raise ValidationError(_('No se puede publicar una partida vinculada a un desembolso Lenka anulado.'))
         return super()._post(soft=soft)

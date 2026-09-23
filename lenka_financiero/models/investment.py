@@ -59,7 +59,7 @@ class LenkaInvestment(models.Model):
             if rec.maturity_date and rec.maturity_date < rec.start_date:
                 raise ValidationError(_('El vencimiento no puede ser anterior a la fecha de inicio.'))
 
-    @api.depends('interest_line_ids.amount', 'interest_line_ids.net_amount', 'interest_line_ids.tax_amount', 'interest_line_ids.state', 'withdrawal_ids.principal_amount', 'withdrawal_ids.state')
+    @api.depends('principal_amount', 'interest_line_ids.amount', 'interest_line_ids.net_amount', 'interest_line_ids.tax_amount', 'interest_line_ids.state', 'withdrawal_ids.principal_amount', 'withdrawal_ids.state')
     def _compute_totals(self):
         for rec in self:
             posted_interest = rec.interest_line_ids.filtered(lambda l: l.state in ('accrued', 'paid'))
@@ -95,10 +95,13 @@ class LenkaInvestment(models.Model):
     def _generate_interest_until(self, end_date, rate, replace=False):
         self.ensure_one()
         if replace:
+            if self.interest_line_ids.filtered(lambda l: l.state != 'paid' and (l.move_id or l.adjustment_move_id)):
+                raise ValidationError(_('Debe regularizar los asientos de intereses antes de recalcular el retiro anticipado.'))
             self.interest_line_ids.filtered(lambda l: l.state != 'paid').unlink()
         monthly_rate = self._monthly_rate_for(rate)
         base = self.principal_amount
-        current = fields.Date.add(self.start_date, months=1)
+        period = 1
+        current = fields.Date.add(self.start_date, months=period)
         existing_dates = set(self.interest_line_ids.filtered(lambda l: l.state != 'cancelled').mapped('period_date'))
         while current <= end_date:
             if self.maturity_date and current > self.maturity_date:
@@ -119,7 +122,8 @@ class LenkaInvestment(models.Model):
                 existing = self.interest_line_ids.filtered(lambda l: l.period_date == current and l.state != 'cancelled')[:1]
                 if existing and self.capitalization == 'monthly':
                     base = existing.base_amount + existing.amount
-            current = fields.Date.add(current, months=1)
+            period += 1
+            current = fields.Date.add(self.start_date, months=period)
         return base
 
     def action_generate_monthly_interest(self):
@@ -230,14 +234,18 @@ class LenkaInvestmentWithdrawal(models.Model):
                 raise ValidationError(_('El capital a retirar debe ser mayor que cero.'))
 
     def action_post(self):
+        self.check_access('write')
         for rec in self:
             if rec.state != 'draft':
                 continue
             investment = rec.investment_id
+            investment.check_access('write')
             if investment.state not in ('active', 'matured'):
                 raise ValidationError(_('La inversion debe estar activa o vencida para registrar un retiro.'))
             if rec.date < investment.start_date:
                 raise ValidationError(_('La fecha del retiro no puede ser anterior al inicio de la inversion.'))
+            if rec.date > fields.Date.context_today(rec):
+                raise ValidationError(_('No se puede aplicar un retiro con fecha futura.'))
             if rec.principal_amount > investment.outstanding_principal + 0.01:
                 raise ValidationError(_('El retiro excede el capital vigente.'))
             previous_withdrawals = investment.withdrawal_ids.filtered(lambda w: w.state == 'posted' and w.id != rec.id)
@@ -253,17 +261,17 @@ class LenkaInvestmentWithdrawal(models.Model):
                     'effective_rate': investment.early_withdrawal_rate,
                 })
             else:
-                investment.action_generate_monthly_interest()
-                unpaid_interest = investment.interest_line_ids.filtered(lambda l: l.state == 'accrued')
+                investment._generate_interest_until(rec.date, investment.passive_rate)
+                unpaid_interest = investment.interest_line_ids.filtered(lambda l: l.state == 'accrued' and l.period_date <= rec.date)
                 rec.write({
                     'gross_interest_amount': sum(unpaid_interest.mapped('amount')),
                     'interest_tax_amount': sum(unpaid_interest.mapped('tax_amount')),
                     'accrued_interest_amount': sum(unpaid_interest.mapped('net_amount')),
                     'effective_rate': investment.passive_rate,
                 })
-                if unpaid_interest:
-                    unpaid_interest.write({'state': 'paid'})
+            if unpaid_interest:
+                unpaid_interest.write({'state': 'paid'})
             rec.state = 'posted'
-            if rec.principal_amount >= investment.outstanding_principal - 0.01:
+            if investment.outstanding_principal <= 0.01:
                 investment.state = 'closed'
         return True

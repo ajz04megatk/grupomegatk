@@ -259,3 +259,56 @@ class TestLenkaAccounting(TransactionCase):
         payment.action_post()
         with self.assertRaises(ValidationError):
             payment.action_create_account_move()
+
+    def _disbursement_with_draft_move(self):
+        self._configure_accounting()
+        disbursement = self.env['lenka.disbursement'].create({
+            'operation_id': self.operation.id, 'amount': 10000.0,
+            'destination_partner_id': self.partner.id,
+        })
+        disbursement.action_post()
+        disbursement.action_create_account_move()
+        return disbursement
+
+    def test_cancel_disbursement_cancels_draft_move(self):
+        disbursement = self._disbursement_with_draft_move()
+        move = disbursement.move_id
+        disbursement.action_cancel()
+        self.assertEqual(disbursement.state, 'cancelled')
+        self.assertEqual(move.state, 'cancel')
+        self.assertEqual(self.operation.disbursed_amount, 0.0)
+        disbursement.action_cancel()
+        self.assertEqual(disbursement.move_id, move)
+
+    def test_cancelled_disbursement_move_cannot_be_posted(self):
+        disbursement = self._disbursement_with_draft_move()
+        disbursement.action_cancel()
+        disbursement.move_id.button_draft()
+        with self.assertRaises(ValidationError):
+            disbursement.move_id.action_post()
+        self.assertEqual(disbursement.move_id.state, 'draft')
+
+    def test_closed_operation_keeps_disbursement_and_move(self):
+        disbursement = self._disbursement_with_draft_move()
+        self.operation.state = 'done'
+        with self.assertRaises(ValidationError):
+            disbursement.action_cancel()
+        self.assertEqual(disbursement.state, 'posted')
+        self.assertEqual(disbursement.move_id.state, 'draft')
+
+    def test_early_recalculation_keeps_accounted_interest_history(self):
+        investment = self.env['lenka.investment'].create({
+            'partner_id': self.partner.id, 'principal_amount': 10000.0,
+            'passive_rate': 12.0, 'early_withdrawal_rate': 6.0,
+            'start_date': '2025-01-15', 'term_months': 12,
+        })
+        investment.action_activate()
+        from odoo import fields
+        investment._generate_interest_until(fields.Date.to_date('2025-03-15'), 12.0)
+        original = investment.interest_line_ids
+        disbursement = self._disbursement_with_draft_move()
+        original[0].move_id = disbursement.move_id
+        with self.assertRaises(ValidationError):
+            investment.action_recalculate_early_withdrawal(fields.Date.to_date('2025-03-15'))
+        self.assertEqual(investment.interest_line_ids, original)
+        self.assertEqual(original[0].move_id, disbursement.move_id)

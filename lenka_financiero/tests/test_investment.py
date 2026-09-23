@@ -350,3 +350,73 @@ class TestLenkaInvestment(TransactionCase):
             withdrawal.principal_amount + withdrawal.accrued_interest_amount,
             places=2,
         )
+
+    def test_half_and_majority_withdrawals_keep_remaining_capital_open(self):
+        today = fields.Date.context_today(self.env.user)
+        for amount in (50000.0, 75000.0):
+            investment = self._investment(maturity_date=today)
+            withdrawal = self.env['lenka.investment.withdrawal'].create({
+                'investment_id': investment.id, 'principal_amount': amount, 'date': today,
+            })
+            withdrawal.action_post()
+            self.assertAlmostEqual(investment.outstanding_principal, 100000.0 - amount)
+            self.assertNotEqual(investment.state, 'closed')
+            remaining = self.env['lenka.investment.withdrawal'].create({
+                'investment_id': investment.id, 'principal_amount': 100000.0 - amount,
+                'date': today,
+            })
+            remaining.action_post()
+            self.assertEqual(investment.state, 'closed')
+            self.assertAlmostEqual(remaining.accrued_interest_amount, 0.0)
+
+    def test_early_withdrawal_marks_recognized_interest_paid(self):
+        investment = self._investment()
+        withdrawal = self.env['lenka.investment.withdrawal'].create({
+            'investment_id': investment.id, 'principal_amount': 100000.0,
+        })
+        withdrawal.action_post()
+        self.assertGreater(withdrawal.accrued_interest_amount, 0.0)
+        self.assertFalse(investment.interest_line_ids.filtered(lambda line: line.state == 'accrued'))
+        self.assertAlmostEqual(investment.paid_interest, withdrawal.accrued_interest_amount)
+        self.assertEqual(investment.state, 'closed')
+
+    def test_interest_calendar_keeps_original_month_end(self):
+        investment = self._investment(start_date='2025-01-31', maturity_date='2025-05-31')
+        investment._generate_interest_until(fields.Date.to_date('2025-04-30'), 12.0)
+        expected = ['2025-02-28', '2025-03-31', '2025-04-30']
+        self.assertEqual([str(line.period_date) for line in investment.interest_line_ids], expected)
+        original = investment.interest_line_ids
+        investment._generate_interest_until(fields.Date.to_date('2025-04-30'), 12.0)
+        self.assertEqual(investment.interest_line_ids, original)
+
+    def test_backdated_withdrawal_does_not_pay_later_interest(self):
+        investment = self._investment(investment_type='current', term_months=0, maturity_date=False,
+                                      start_date='2025-01-15')
+        investment._generate_interest_until(fields.Date.to_date('2025-04-15'), 12.0)
+        later = investment.interest_line_ids.filtered(lambda line: line.period_date > fields.Date.to_date('2025-02-15'))
+        first = investment.interest_line_ids.filtered(lambda line: line.period_date == fields.Date.to_date('2025-02-15'))
+        withdrawal = self.env['lenka.investment.withdrawal'].create({
+            'investment_id': investment.id, 'principal_amount': 1000.0, 'date': '2025-02-15',
+        })
+        withdrawal.action_post()
+        self.assertAlmostEqual(withdrawal.accrued_interest_amount, first.net_amount)
+        self.assertEqual(first.state, 'paid')
+        self.assertTrue(all(line.state == 'accrued' for line in later))
+        self.assertEqual(len(investment.interest_line_ids), 3)
+
+    def test_future_withdrawal_rejected_without_generating_interest(self):
+        investment = self._investment()
+        withdrawal = self.env['lenka.investment.withdrawal'].create({
+            'investment_id': investment.id, 'principal_amount': 1000.0,
+            'date': fields.Date.add(fields.Date.context_today(self.env.user), days=1),
+        })
+        with self.assertRaises(ValidationError):
+            withdrawal.action_post()
+        self.assertEqual(withdrawal.state, 'draft')
+        self.assertFalse(investment.interest_line_ids)
+
+    def test_principal_change_invalidates_cached_outstanding(self):
+        investment = self._investment()
+        self.assertEqual(investment.outstanding_principal, 100000.0)
+        investment.principal_amount = 120000.0
+        self.assertEqual(investment.outstanding_principal, 120000.0)
