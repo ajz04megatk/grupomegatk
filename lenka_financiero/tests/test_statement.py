@@ -263,7 +263,7 @@ class TestLenkaStatement(TransactionCase):
         from unittest.mock import patch
         investment = self.env['lenka.investment'].create({
             'partner_id': self.partner.id, 'principal_amount': 10000.0,
-            'passive_rate': 1.0, 'start_date': '2025-03-15',
+            'passive_rate': 1.0, 'early_withdrawal_rate': 0.5, 'start_date': '2025-03-15',
             'maturity_date': '2026-03-15',
         })
         investment.action_activate()
