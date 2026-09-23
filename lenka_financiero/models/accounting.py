@@ -31,7 +31,20 @@ class ResConfigSettingsLenkaAccounting(models.TransientModel):
 class LenkaDisbursementAccounting(models.Model):
     _inherit = 'lenka.disbursement'
 
-    move_id = fields.Many2one('account.move', string='Partida contable', readonly=True, copy=False)
+    move_id = fields.Many2one('account.move', string='Partida contable', readonly=True, copy=False, ondelete='restrict')
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        for vals in vals_list:
+            if vals.get('move_id'):
+                raise ValidationError(_('La partida del desembolso debe generarse mediante su accion contable.'))
+            vals['move_id'] = False
+        return super().create(vals_list)
+
+    def write(self, vals):
+        if 'move_id' in vals and any(rec.move_id.id != vals['move_id'] for rec in self):
+            raise ValidationError(_('No se puede reemplazar ni desvincular la partida del desembolso.'))
+        return super().write(vals)
 
     def _get_accounting_company(self):
         self.ensure_one()
@@ -85,7 +98,7 @@ class LenkaDisbursementAccounting(models.Model):
             if rec.move_id:
                 continue
             move = self.env['account.move'].with_company(rec.operation_id.company_id).create(rec._prepare_disbursement_move())
-            rec.move_id = move.id
+            super(LenkaDisbursementAccounting, rec).write({'move_id': move.id})
         return True
 
     def action_open_account_move(self):

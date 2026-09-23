@@ -333,10 +333,12 @@ class TestLenkaEndToEnd(TransactionCase):
             'state': 'contracted',
         })
         operation.action_generate_schedule()
+        self.env['lenka.funding.line'].create({
+            'operation_id': operation.id, 'source_type': 'own', 'amount': 30000.0,
+        })
         self.env['lenka.disbursement'].create({
             'operation_id': operation.id,
             'amount': 30000.0,
-            'state': 'posted',
-        })
+        }).action_post()
         with self.assertRaises(ValidationError):
             operation.action_generate_schedule()

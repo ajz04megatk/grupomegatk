@@ -133,14 +133,31 @@ class LenkaDisbursement(models.Model):
     ], string='Medio', required=True, default='transfer')
     reference = fields.Char(string='Referencia')
     funding_line_id = fields.Many2one('lenka.funding.line', string='Fuente de fondeo')
-    state = fields.Selection([('draft', 'Borrador'), ('posted', 'Aplicado'), ('cancelled', 'Anulado')], default='draft', tracking=True)
+    state = fields.Selection([('draft', 'Borrador'), ('posted', 'Aplicado'), ('cancelled', 'Anulado')], default='draft', tracking=True, copy=False)
 
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
+            if vals.get('state', 'draft') != 'draft':
+                raise ValidationError(_('Cree el desembolso en borrador y utilice Aplicar para registrarlo.'))
+            vals['state'] = 'draft'
             if vals.get('name', 'Nuevo') == 'Nuevo':
                 vals['name'] = self.env['ir.sequence'].next_by_code('lenka.disbursement') or 'Nuevo'
         return super().create(vals_list)
+
+    def write(self, vals):
+        if 'state' in vals and any(rec.state != vals['state'] for rec in self):
+            raise ValidationError(_('Utilice Aplicar o Anular para cambiar el estado del desembolso.'))
+        protected = {'operation_id', 'date', 'amount', 'destination_type',
+                     'destination_partner_id', 'payment_method', 'funding_line_id'}
+        if protected.intersection(vals) and any(rec.state != 'draft' for rec in self):
+            raise ValidationError(_('Los datos de un desembolso aplicado o anulado no pueden modificarse. Registre uno nuevo.'))
+        return super().write(vals)
+
+    def unlink(self):
+        if any(rec.state != 'draft' or rec.move_id for rec in self):
+            raise ValidationError(_('Solo puede eliminar desembolsos en borrador sin partida contable.'))
+        return super().unlink()
 
     @api.constrains('amount')
     def _check_amount(self):
@@ -149,6 +166,8 @@ class LenkaDisbursement(models.Model):
                 raise ValidationError(_('El desembolso debe ser mayor que cero.'))
 
     def action_post(self):
+        self.check_access('write')
+        self.mapped('operation_id').check_access('read')
         for rec in self:
             if rec.state != 'draft':
                 continue
@@ -168,7 +187,7 @@ class LenkaDisbursement(models.Model):
                 ).mapped('amount'))
                 if used_source + rec.amount > rec.funding_line_id.amount + 0.01:
                     raise ValidationError(_('El desembolso excede el monto disponible en la fuente de fondeo seleccionada.'))
-            rec.state = 'posted'
+            super(LenkaDisbursement, rec).write({'state': 'posted'})
         return True
 
     def action_cancel(self):
@@ -181,5 +200,5 @@ class LenkaDisbursement(models.Model):
         for rec in self:
             if rec.move_id.state == 'draft':
                 rec.move_id.button_cancel()
-            rec.state = 'cancelled'
+            super(LenkaDisbursement, rec).write({'state': 'cancelled'})
         return True

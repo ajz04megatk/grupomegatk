@@ -312,3 +312,72 @@ class TestLenkaAccounting(TransactionCase):
             investment.action_recalculate_early_withdrawal(fields.Date.to_date('2025-03-15'))
         self.assertEqual(investment.interest_line_ids, original)
         self.assertEqual(original[0].move_id, disbursement.move_id)
+
+    def test_applied_disbursement_cannot_be_edited_or_deleted(self):
+        disbursement = self._disbursement_with_draft_move()
+        for vals in ({'amount': 5000.0}, {'date': '2025-01-01'},
+                     {'funding_line_id': False}, {'destination_partner_id': False}):
+            with self.assertRaises(ValidationError):
+                disbursement.write(vals)
+        with self.assertRaises(ValidationError):
+            disbursement.unlink()
+        self.assertEqual(self.operation.disbursed_amount, 10000.0)
+
+    def test_disbursement_copy_is_unapplied_without_accounting(self):
+        disbursement = self._disbursement_with_draft_move()
+        duplicate = disbursement.copy()
+        self.assertEqual(duplicate.state, 'draft')
+        self.assertFalse(duplicate.move_id)
+        self.assertNotEqual(duplicate.name, disbursement.name)
+        self.assertEqual(self.operation.disbursed_amount, 10000.0)
+        with self.assertRaises(ValidationError):
+            duplicate.action_post()
+
+    def test_disbursement_cannot_skip_validation_by_writing_state(self):
+        model = self.env['lenka.disbursement']
+        for state in ('posted', 'cancelled'):
+            with self.assertRaises(ValidationError):
+                model.create({'operation_id': self.operation.id, 'amount': 10000.0, 'state': state})
+        draft = model.create({'operation_id': self.operation.id, 'amount': 10000.0})
+        for state in ('posted', 'cancelled'):
+            with self.assertRaises(ValidationError):
+                draft.write({'state': state})
+        draft.action_post()
+        draft.action_post()
+        self.assertEqual(self.operation.disbursed_amount, 10000.0)
+        draft.action_cancel()
+        with self.assertRaises(ValidationError):
+            draft.write({'state': 'draft'})
+        with self.assertRaises(ValidationError):
+            draft.write({'amount': 5000.0})
+        with self.assertRaises(ValidationError):
+            draft.unlink()
+
+    def test_disbursement_move_cannot_be_detached_or_injected(self):
+        disbursement = self._disbursement_with_draft_move()
+        with self.assertRaises(ValidationError):
+            disbursement.move_id = False
+        with self.assertRaises(ValidationError):
+            self.env['lenka.disbursement'].create({
+                'operation_id': self.operation.id, 'amount': 1000.0,
+                'move_id': disbursement.move_id.id,
+            })
+        original = disbursement.move_id
+        disbursement.action_create_account_move()
+        self.assertEqual(disbursement.move_id, original)
+
+    def test_mixed_disbursement_edit_does_not_change_draft(self):
+        posted = self._disbursement_with_draft_move()
+        draft = posted.copy()
+        with self.assertRaises(ValidationError):
+            (draft | posted).write({'amount': 5000.0})
+        self.assertEqual(draft.amount, 10000.0)
+
+    def test_draft_disbursement_can_be_corrected_and_deleted(self):
+        draft = self.env['lenka.disbursement'].create({
+            'operation_id': self.operation.id, 'amount': 1000.0,
+        })
+        draft.amount = 2000.0
+        self.assertEqual(draft.amount, 2000.0)
+        draft.unlink()
+        self.assertFalse(draft.exists())
