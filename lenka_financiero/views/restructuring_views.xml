@@ -24,6 +24,8 @@
             <form>
                 <header>
                     <button name="action_submit" type="object" string="Enviar a revision" class="btn-primary" invisible="state != 'draft'"/>
+                    <button name="action_refresh_proposal" type="object" string="Actualizar saldos de propuesta" invisible="state not in ('draft', 'review')"/>
+                    <button name="action_return_to_review" type="object" string="Revisar aprobacion" groups="lenka_financiero.group_lenka_manager" invisible="state != 'approved'"/>
                     <button name="action_approve" type="object" string="Aprobar" class="btn-primary" groups="lenka_financiero.group_lenka_manager" invisible="state != 'review'"/>
                     <button name="action_prepare_successor" type="object" string="Preparar nueva operacion" class="btn-primary" groups="lenka_financiero.group_lenka_manager" invisible="state != 'approved'"/>
                     <button name="action_complete_restructuring" type="object" string="Completar sustitucion" class="btn-primary" groups="lenka_financiero.group_lenka_manager" invisible="state != 'prepared' or original_operation_closed"/>
@@ -51,6 +53,20 @@
                         <field name="original_interest_rate"/>
                         <field name="original_rate_period"/>
                         <field name="original_term_months"/>
+                    </group>
+                    <group string="Modalidad y saldos actuales">
+                        <field name="settlement_method" readonly="state not in ('draft','review')"/>
+                        <field name="pending_capital"/>
+                        <field name="pending_interest"/>
+                        <field name="pending_late_fees"/>
+                        <field name="suggested_principal"/>
+                    </group>
+                    <group string="Desglose aprobado" invisible="not approved_at">
+                        <field name="approved_capital"/>
+                        <field name="approved_interest"/>
+                        <field name="approved_late_fees"/>
+                        <field name="approved_by"/>
+                        <field name="approved_at"/>
                     </group>
                     <group string="Nueva propuesta">
                         <field name="proposed_principal_amount" readonly="state not in ('draft','review')"/>

@@ -38,7 +38,7 @@ class TestLenkaRestructuring(TransactionCase):
 
     def test_restructuring_preserves_original_snapshot(self):
         restructuring = self.env['lenka.restructuring'].create({
-            'operation_id': self.operation.id,
+            'operation_id': self.operation.id, 'settlement_method': 'capitalize',
             'reason': 'Cliente solicita ampliar plazo',
             'proposed_interest_rate': 2.5,
             'proposed_term_months': 18,
@@ -72,7 +72,7 @@ class TestLenkaRestructuring(TransactionCase):
         original_rate = self.operation.interest_rate
         original_term = self.operation.term_months
         restructuring = self.env['lenka.restructuring'].create({
-            'operation_id': self.operation.id,
+            'operation_id': self.operation.id, 'settlement_method': 'capitalize',
             'reason': 'Extender plazo y reducir tasa',
             'proposed_principal_amount': self.operation.outstanding_capital,
             'proposed_interest_rate': 2.5,
@@ -96,7 +96,7 @@ class TestLenkaRestructuring(TransactionCase):
 
     def test_restructuring_blocked_when_unapplied_collection_exists(self):
         payment = self.env['lenka.payment'].create({
-            'operation_id': self.operation.id,
+            'operation_id': self.operation.id, 'settlement_method': 'capitalize',
             'payment_date': fields.Date.context_today(self.env.user),
             'amount': 110000.0,
             'payment_method': 'cash',
@@ -104,7 +104,7 @@ class TestLenkaRestructuring(TransactionCase):
         payment.action_post()
         self.assertGreater(payment.unapplied_amount, 0.0)
         restructuring = self.env['lenka.restructuring'].create({
-            'operation_id': self.operation.id,
+            'operation_id': self.operation.id, 'settlement_method': 'capitalize',
             'reason': 'Debe regularizar cobro',
             'proposed_principal_amount': 1000.0,
             'proposed_interest_rate': 2.0,
@@ -117,7 +117,7 @@ class TestLenkaRestructuring(TransactionCase):
 
     def test_approved_restructuring_terms_are_locked(self):
         restructuring = self.env['lenka.restructuring'].create({
-            'operation_id': self.operation.id,
+            'operation_id': self.operation.id, 'settlement_method': 'capitalize',
             'reason': 'Propuesta que debe quedar congelada',
             'proposed_principal_amount': self.operation.outstanding_capital,
             'proposed_interest_rate': 2.5,
@@ -133,7 +133,7 @@ class TestLenkaRestructuring(TransactionCase):
 
     def test_original_cannot_close_until_successor_is_active(self):
         restructuring = self.env['lenka.restructuring'].create({
-            'operation_id': self.operation.id,
+            'operation_id': self.operation.id, 'settlement_method': 'capitalize',
             'reason': 'Sustitucion pendiente de activar',
             'proposed_principal_amount': self.operation.outstanding_capital,
             'proposed_interest_rate': 2.5,
@@ -150,13 +150,13 @@ class TestLenkaRestructuring(TransactionCase):
 
     def test_complete_restructuring_closes_original_only_after_successor_active(self):
         guarantee = self.env['lenka.guarantee'].create({
-            'operation_id': self.operation.id,
+            'operation_id': self.operation.id, 'settlement_method': 'capitalize',
             'guarantee_type': 'equipment',
             'description': 'Garantia de operacion reestructurada',
             'state': 'active',
         })
         restructuring = self.env['lenka.restructuring'].create({
-            'operation_id': self.operation.id,
+            'operation_id': self.operation.id, 'settlement_method': 'capitalize',
             'reason': 'Sustitucion completa',
             'proposed_principal_amount': self.operation.outstanding_capital,
             'proposed_interest_rate': 2.5,
@@ -175,7 +175,7 @@ class TestLenkaRestructuring(TransactionCase):
         model = self.env['lenka.restructuring']
         if user:
             model = model.with_user(user)
-        return model.create(dict({'operation_id': self.operation.id, 'reason': 'Prueba de control de reestructuracion'}, **values))
+        return model.create(dict({'operation_id': self.operation.id, 'settlement_method': 'capitalize', 'reason': 'Prueba de control de reestructuracion'}, **values))
 
     def test_operator_cannot_approve_prepare_or_complete_via_direct_call(self):
         request = self._request(user=self.operator)
@@ -276,3 +276,130 @@ class TestLenkaRestructuring(TransactionCase):
             (own | other).with_user(self.manager).with_context(allowed_company_ids=self.env.company.ids).action_approve()
         self.assertEqual(own.state, 'review')
         self.assertEqual(other.state, 'review')
+
+    def _operation_with_due_charges(self):
+        operation = self.operation.copy({
+            'state': 'review', 'first_payment_date': fields.Date.context_today(self.operation),
+        })
+        operation.action_generate_schedule()
+        operation.schedule_line_ids.sorted('sequence')[0].late_fee_due = 200.0
+        operation.state = 'active'
+        self.operation = operation
+        return operation
+
+    def _pay(self, amount):
+        payment = self.env['lenka.payment'].create({
+            'operation_id': self.operation.id, 'amount': amount,
+            'payment_date': fields.Date.context_today(self.operation), 'payment_method': 'cash',
+        })
+        payment.action_post()
+        return payment
+
+    def test_modality_must_be_explicitly_chosen(self):
+        request = self._request(settlement_method=False)
+        request.action_submit()
+        with self.assertRaisesRegex(ValidationError, 'modalidad'):
+            request.action_approve()
+        self.assertEqual(request.state, 'review')
+
+    def test_capitalize_due_charges_uses_new_principal_and_new_rate(self):
+        self._operation_with_due_charges()
+        request = self._request(proposed_interest_rate=2.0, proposed_term_months=18)
+        self.assertAlmostEqual(request.pending_interest, 3000.0)
+        self.assertAlmostEqual(request.pending_late_fees, 200.0)
+        self.assertAlmostEqual(request.proposed_principal_amount, 103200.0)
+        request.action_submit()
+        request.with_user(self.manager).action_approve()
+        self.assertEqual(request.approved_by, self.manager)
+        self.assertAlmostEqual(request.approved_capital, 100000.0)
+        self.assertAlmostEqual(request.approved_interest, 3000.0)
+        request.with_user(self.manager).action_prepare_successor()
+        successor = request.successor_operation_id
+        self.assertAlmostEqual(successor.principal_amount, 103200.0)
+        self.assertAlmostEqual(successor.schedule_line_ids.sorted('sequence')[0].interest, 2064.0)
+        self.assertEqual(successor.term_months, 18)
+        self.assertFalse(self.operation.payment_ids)
+
+    def test_separate_payment_must_be_real_and_complete(self):
+        self._operation_with_due_charges()
+        request = self._request(settlement_method='pay_separately', proposed_interest_rate=2.0)
+        request.action_submit()
+        request.action_approve()
+        with self.assertRaisesRegex(ValidationError, 'Registre el pago'):
+            request.action_prepare_successor()
+        self._pay(1000.0)
+        with self.assertRaisesRegex(ValidationError, 'Registre el pago'):
+            request.action_prepare_successor()
+        self._pay(2200.0)
+        request.action_prepare_successor()
+        self.assertAlmostEqual(request.successor_operation_id.principal_amount, 100000.0)
+        self.assertAlmostEqual(request.successor_operation_id.schedule_line_ids.sorted('sequence')[0].interest, 2000.0)
+        self.assertAlmostEqual(self.operation.paid_interest, 3000.0)
+        self.assertAlmostEqual(self.operation.paid_late_fees, 200.0)
+        self.assertAlmostEqual(self.operation.paid_capital, 0.0)
+
+    def test_cancelled_separate_payment_blocks_completion(self):
+        self._operation_with_due_charges()
+        request = self._request(settlement_method='pay_separately')
+        request.action_submit()
+        request.action_approve()
+        payment = self._pay(3200.0)
+        request.action_prepare_successor()
+        request.successor_operation_id.state = 'active'
+        payment.action_cancel()
+        with self.assertRaisesRegex(ValidationError, 'Registre el pago'):
+            request.action_complete_restructuring()
+        self.assertEqual(self.operation.state, 'active')
+        self.assertFalse(request.original_operation_closed)
+
+    def test_changed_capital_requires_new_manager_approval(self):
+        self._operation_with_due_charges()
+        request = self._request(settlement_method='pay_separately')
+        request.action_submit()
+        request.action_approve()
+        self._pay(4200.0)
+        with self.assertRaisesRegex(ValidationError, 'capital cambio'):
+            request.action_prepare_successor()
+        with self.assertRaises(AccessError):
+            request.with_user(self.operator).action_return_to_review()
+        request.with_user(self.manager).action_return_to_review()
+        request.action_refresh_proposal()
+        self.assertAlmostEqual(request.proposed_principal_amount, 99000.0)
+        request.action_approve()
+        request.action_prepare_successor()
+        self.assertAlmostEqual(request.successor_operation_id.financed_amount, 99000.0)
+
+    def test_changed_charges_block_capitalization_until_reviewed(self):
+        self._operation_with_due_charges()
+        request = self._request()
+        request.action_submit()
+        request.action_approve()
+        self.operation.schedule_line_ids.sorted('sequence')[0].late_fee_due = 300.0
+        with self.assertRaisesRegex(ValidationError, 'intereses o la mora cambiaron'):
+            request.action_prepare_successor()
+        request.action_return_to_review()
+        request.action_refresh_proposal()
+        self.assertAlmostEqual(request.proposed_principal_amount, 103300.0)
+        request.action_approve()
+        request.action_prepare_successor()
+
+    def test_changing_negotiated_modality_recalculates_before_approval(self):
+        self._operation_with_due_charges()
+        request = self._request()
+        request.settlement_method = 'pay_separately'
+        request.action_submit()
+        with self.assertRaisesRegex(ValidationError, 'no coincide'):
+            request.action_approve()
+        request.action_refresh_proposal()
+        self.assertAlmostEqual(request.proposed_principal_amount, 100000.0)
+        request.action_approve()
+        with self.assertRaises(ValidationError):
+            request.settlement_method = 'capitalize'
+        with self.assertRaises(ValidationError):
+            request.approved_interest = 0.0
+
+    def test_future_interest_is_not_added_to_restructured_principal(self):
+        request = self._request()
+        self.assertGreater(sum(self.operation.schedule_line_ids.mapped('interest')), 0.0)
+        self.assertAlmostEqual(request.pending_interest, 0.0)
+        self.assertAlmostEqual(request.proposed_principal_amount, 100000.0)
