@@ -71,8 +71,9 @@ class LenkaRestructuring(models.Model):
 
     successor_operation_id = fields.Many2one(
         'lenka.financial.operation', string='Nueva operacion',
-        readonly=True, copy=False, ondelete='restrict',
+        readonly=True, copy=False, ondelete='restrict', tracking=True,
     )
+    completed_date = fields.Date(string='Fecha de traslado de saldo', readonly=True, copy=False, tracking=True)
     original_operation_closed = fields.Boolean(string='Operacion original cerrada', readonly=True, copy=False)
 
     @api.model_create_multi
@@ -86,6 +87,7 @@ class LenkaRestructuring(models.Model):
             vals['state'] = 'draft'
             vals['successor_operation_id'] = False
             vals['original_operation_closed'] = False
+            vals['completed_date'] = False
             operation = self.env['lenka.financial.operation'].browse(vals.get('operation_id')).exists()
             if not operation:
                 raise ValidationError(_('Seleccione una operacion valida.'))
@@ -111,7 +113,7 @@ class LenkaRestructuring(models.Model):
         protected = {
             'original_outstanding_capital', 'original_payoff_amount',
             'original_interest_rate', 'original_rate_period', 'original_term_months',
-            'successor_operation_id', 'original_operation_closed', 'state',
+            'successor_operation_id', 'original_operation_closed', 'completed_date', 'state',
             'approved_capital', 'approved_interest', 'approved_late_fees', 'approved_by', 'approved_at',
         }
         if protected.intersection(vals):
@@ -168,9 +170,19 @@ class LenkaRestructuring(models.Model):
 
     def action_return_to_review(self):
         self._check_manager_action()
-        if any(rec.state != 'approved' or rec.successor_operation_id for rec in self):
-            raise ValidationError(_('Solo puede revisar una aprobacion antes de preparar la nueva operacion.'))
-        super().write({'state': 'review', 'approved_by': False, 'approved_at': False,
+        self.mapped('successor_operation_id').check_access('write')
+        for rec in self:
+            successor = rec.successor_operation_id
+            if rec.state not in ('approved', 'prepared') or rec.original_operation_closed:
+                raise ValidationError(_('Solo puede revisar una aprobacion antes de completar la sustitucion.'))
+            if successor and (successor.state not in ('draft', 'review', 'approved') or successor.contract_signed
+                              or successor.disbursement_ids.filtered(lambda d: d.state == 'posted')):
+                raise ValidationError(_('No puede sustituir una nueva operacion ya contratada o desembolsada. Regularice primero su contrato.'))
+        for rec in self:
+            if rec.successor_operation_id:
+                rec.successor_operation_id.state = 'cancelled'
+        super().write({'state': 'review', 'successor_operation_id': False,
+                       'approved_by': False, 'approved_at': False,
                        'approved_capital': 0.0, 'approved_interest': 0.0, 'approved_late_fees': 0.0})
         return True
 
@@ -286,8 +298,10 @@ class LenkaRestructuring(models.Model):
             if rec.state != 'prepared' or not rec.successor_operation_id:
                 raise ValidationError(_('Primero prepare la nueva operacion de la reestructuracion.'))
             successor = rec.successor_operation_id
-            if successor.state != 'active':
-                raise ValidationError(_('La nueva operacion debe estar contratada, desembolsada y activa antes de cerrar la operacion original.'))
+            if successor.state not in ('contracted', 'active'):
+                raise ValidationError(_('La nueva operacion debe estar contratada antes de trasladar el saldo y cerrar la operacion original.'))
+            if successor.disbursement_ids.filtered(lambda d: d.state == 'posted'):
+                raise ValidationError(_('La reestructuracion traslada deuda existente; no debe incluir un nuevo desembolso de efectivo.'))
             original = rec.operation_id
             if original.state != 'active':
                 raise ValidationError(_('La operacion original debe continuar activa hasta completar la sustitucion.'))
@@ -300,9 +314,13 @@ class LenkaRestructuring(models.Model):
                     or successor.term_months != rec.proposed_term_months
                     or successor.calculation_method != rec.proposed_calculation_method):
                 raise ValidationError(_('La nueva operacion debe conservar las condiciones aprobadas de la reestructuracion.'))
+            super(LenkaRestructuring, rec).write({
+                'original_operation_closed': True, 'completed_date': fields.Date.context_today(rec),
+            })
+            if successor.state == 'contracted':
+                successor.action_activate()
             original.state = 'done'
             original.guarantee_ids.filtered(lambda g: g.state in ('accepted', 'active')).write({'state': 'release_pending'})
-            super(LenkaRestructuring, rec).write({'original_operation_closed': True})
         return True
 
     def action_cancel(self):
@@ -312,3 +330,54 @@ class LenkaRestructuring(models.Model):
                 raise ValidationError(_('No se puede cancelar desde aqui una reestructuracion que ya preparo una nueva operacion. Revise primero la operacion sucesora.'))
             super(LenkaRestructuring, rec).write({'state': 'cancelled'})
         return True
+
+
+class LenkaOperationRestructuring(models.Model):
+    _inherit = 'lenka.financial.operation'
+
+    restructuring_out_ids = fields.One2many('lenka.restructuring', 'operation_id', copy=False)
+    restructuring_in_ids = fields.One2many('lenka.restructuring', 'successor_operation_id', copy=False)
+    transferred_capital = fields.Monetary(string='Capital trasladado por reestructuracion', compute='_compute_transferred_amounts')
+    restructured_funding_amount = fields.Monetary(string='Saldo recibido por reestructuracion', compute='_compute_transferred_amounts')
+
+    @api.depends('restructuring_out_ids.original_operation_closed', 'restructuring_out_ids.approved_capital',
+                 'restructuring_in_ids.original_operation_closed', 'restructuring_in_ids.proposed_principal_amount')
+    def _compute_transferred_amounts(self):
+        for rec in self:
+            rec.transferred_capital = sum(rec.restructuring_out_ids.filtered('original_operation_closed').mapped('approved_capital'))
+            rec.restructured_funding_amount = sum(rec.restructuring_in_ids.filtered('original_operation_closed').mapped('proposed_principal_amount'))
+
+    @api.depends('financed_amount', 'schedule_line_ids.capital_paid', 'schedule_line_ids.interest_paid',
+                 'schedule_line_ids.late_fee_paid', 'payment_ids.state', 'payment_ids.extra_capital_amount',
+                 'payment_ids.card_fee_amount', 'payment_ids.net_bank_amount', 'transferred_capital')
+    def _compute_collection_totals(self):
+        super()._compute_collection_totals()
+        for rec in self:
+            rec.outstanding_capital = max(rec.outstanding_capital - rec.transferred_capital, 0.0)
+
+    @api.depends('disbursement_ids.state', 'disbursement_ids.amount', 'financed_amount', 'restructured_funding_amount')
+    def _compute_disbursed_amount(self):
+        super()._compute_disbursed_amount()
+        for rec in self:
+            rec.pending_disbursement = max(rec.financed_amount - rec.disbursed_amount - rec.restructured_funding_amount, 0.0)
+
+    def get_payoff_amount(self):
+        self.ensure_one()
+        if self.restructuring_out_ids.filtered('original_operation_closed'):
+            return 0.0
+        return super().get_payoff_amount()
+
+    def write(self, vals):
+        if 'state' in vals and vals['state'] != 'done' and any(rec.restructuring_out_ids.filtered('original_operation_closed') for rec in self):
+            raise ValidationError(_('Una operacion sustituida por reestructuracion no puede reabrirse.'))
+        return super().write(vals)
+
+
+class LenkaRestructuringDisbursement(models.Model):
+    _inherit = 'lenka.disbursement'
+
+    def action_post(self):
+        self.check_access('write')
+        if any(rec.state == 'draft' and rec.operation_id.restructuring_in_ids for rec in self):
+            raise ValidationError(_('Complete la sustitucion desde Reestructuraciones. El saldo se traslada sin un nuevo desembolso de efectivo.'))
+        return super().action_post()

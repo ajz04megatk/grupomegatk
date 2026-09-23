@@ -41,6 +41,7 @@
                 <page string="Desembolsos">
                     <group>
                         <field name="disbursed_amount" readonly="1"/>
+                        <field name="restructured_funding_amount" readonly="1" invisible="not restructured_funding_amount"/>
                         <field name="pending_disbursement" readonly="1"/>
                     </group>
                     <field name="disbursement_ids">

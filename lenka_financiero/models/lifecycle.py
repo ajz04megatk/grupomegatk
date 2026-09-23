@@ -73,7 +73,7 @@ class LenkaFinancialOperationLifecycle(models.Model):
         for rec in self:
             if rec.state != 'contracted':
                 raise ValidationError(_('La operacion debe estar contratada antes de activarse.'))
-            if rec.disbursed_amount <= 0:
+            if rec.disbursed_amount + rec.restructured_funding_amount <= 0:
                 raise ValidationError(_('Debe existir al menos un desembolso aplicado.'))
             if rec.pending_disbursement > 0.01:
                 raise ValidationError(_('Aun existe monto pendiente de desembolsar.'))

@@ -97,6 +97,7 @@
                         <group>
                             <field name="paid_capital" readonly="1"/>
                             <field name="outstanding_capital" readonly="1"/>
+                            <field name="transferred_capital" readonly="1" invisible="not transferred_capital"/>
                             <field name="net_collections" readonly="1"/>
                         </group>
                         <group>

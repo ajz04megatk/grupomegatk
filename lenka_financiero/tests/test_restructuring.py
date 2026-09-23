@@ -96,7 +96,7 @@ class TestLenkaRestructuring(TransactionCase):
 
     def test_restructuring_blocked_when_unapplied_collection_exists(self):
         payment = self.env['lenka.payment'].create({
-            'operation_id': self.operation.id, 'settlement_method': 'capitalize',
+            'operation_id': self.operation.id,
             'payment_date': fields.Date.context_today(self.env.user),
             'amount': 110000.0,
             'payment_method': 'cash',
@@ -150,7 +150,7 @@ class TestLenkaRestructuring(TransactionCase):
 
     def test_complete_restructuring_closes_original_only_after_successor_active(self):
         guarantee = self.env['lenka.guarantee'].create({
-            'operation_id': self.operation.id, 'settlement_method': 'capitalize',
+            'operation_id': self.operation.id,
             'guarantee_type': 'equipment',
             'description': 'Garantia de operacion reestructurada',
             'state': 'active',
@@ -403,3 +403,150 @@ class TestLenkaRestructuring(TransactionCase):
         self.assertGreater(sum(self.operation.schedule_line_ids.mapped('interest')), 0.0)
         self.assertAlmostEqual(request.pending_interest, 0.0)
         self.assertAlmostEqual(request.proposed_principal_amount, 100000.0)
+
+    def _contract_successor(self, request):
+        successor = request.successor_operation_id
+        successor.action_approve()
+        self.env['lenka.contract.template'].create({
+            'name': 'Contrato reestructuracion prueba', 'company_id': successor.company_id.id,
+            'document_type': 'contract', 'operation_type': 'loan',
+            'body_html': '<p>{{CLIENTE}} {{MONTO_FINANCIADO}}</p>',
+        })
+        successor.action_generate_contract_documents()
+        document = successor.generated_document_ids.filtered(lambda d: d.document_type == 'contract')[0]
+        document.attachment_id = self.env['ir.attachment'].create({
+            'name': 'contrato-reestructuracion-prueba.pdf', 'datas': 'RklSTUFETw==',
+            'res_model': document._name, 'res_id': document.id,
+        })
+        document.action_mark_signed()
+        successor.action_mark_contracted()
+        return successor
+
+    def test_capitalized_debt_moves_without_cash_or_duplicate_balance(self):
+        original = self._operation_with_due_charges()
+        request = self._request(proposed_interest_rate=2.0)
+        request.action_submit()
+        request.action_approve()
+        request.action_prepare_successor()
+        successor = self._contract_successor(request)
+        request.action_complete_restructuring()
+        request.action_complete_restructuring()
+        self.assertEqual(original.state, 'done')
+        self.assertEqual(successor.state, 'active')
+        self.assertAlmostEqual(original.outstanding_capital, 0.0)
+        self.assertAlmostEqual(original.get_payoff_amount(), 0.0)
+        self.assertAlmostEqual(original.paid_capital, 0.0)
+        self.assertAlmostEqual(original.paid_interest, 0.0)
+        self.assertAlmostEqual(original.net_collections, 0.0)
+        self.assertAlmostEqual(original.transferred_capital, 100000.0)
+        self.assertAlmostEqual(successor.outstanding_capital, 103200.0)
+        self.assertAlmostEqual(successor.restructured_funding_amount, 103200.0)
+        self.assertAlmostEqual(successor.disbursed_amount, 0.0)
+        self.assertAlmostEqual(successor.pending_disbursement, 0.0)
+        self.assertFalse(successor.disbursement_ids)
+        self.assertFalse(original.payment_ids)
+        self.assertTrue(request.completed_date)
+        with self.assertRaises(ValidationError):
+            original.state = 'active'
+        with self.assertRaises(ValidationError):
+            request.completed_date = fields.Date.add(request.completed_date, days=1)
+
+        model = self.env['lenka.statement']
+        statement = model.create({
+            'statement_type': 'operation', 'operation_id': original.id,
+            'partner_id': original.partner_id.id, 'company_id': original.company_id.id,
+            'currency_id': original.currency_id.id,
+            'date_from': request.completed_date, 'date_to': request.completed_date,
+        })
+        statement.action_generate()
+        statement.action_generate()
+        self.assertAlmostEqual(statement.opening_balance, 100000.0)
+        self.assertAlmostEqual(statement.closing_balance, 0.0)
+        self.assertEqual(len(statement.line_ids), 1)
+        self.assertEqual(statement.line_ids.reference, successor.name)
+        self.assertIn('sin cobro', statement.line_ids.description)
+        next_day = fields.Date.add(request.completed_date, days=1)
+        following = statement.copy({'date_from': next_day, 'date_to': next_day})
+        following.action_generate()
+        self.assertAlmostEqual(following.opening_balance, 0.0)
+        self.assertFalse(following.line_ids)
+
+    def test_separate_payment_transfers_only_capital_and_keeps_actual_collections(self):
+        original = self._operation_with_due_charges()
+        request = self._request(settlement_method='pay_separately')
+        request.action_submit()
+        request.action_approve()
+        payment = self._pay(3200.0)
+        request.action_prepare_successor()
+        successor = self._contract_successor(request)
+        request.action_complete_restructuring()
+        self.assertAlmostEqual(successor.outstanding_capital, 100000.0)
+        self.assertAlmostEqual(original.outstanding_capital, 0.0)
+        self.assertAlmostEqual(original.net_collections, 3200.0)
+        self.assertAlmostEqual(original.paid_interest, 3000.0)
+        self.assertAlmostEqual(original.paid_late_fees, 200.0)
+        with self.assertRaises(ValidationError):
+            payment.action_cancel()
+
+    def test_restructuring_successor_cannot_receive_cash_disbursement(self):
+        request = self._request()
+        request.action_submit()
+        request.action_approve()
+        request.action_prepare_successor()
+        successor = self._contract_successor(request)
+        disbursement = self.env['lenka.disbursement'].create({
+            'operation_id': successor.id, 'amount': successor.financed_amount,
+        })
+        with self.assertRaisesRegex(ValidationError, 'sin un nuevo desembolso'):
+            disbursement.action_post()
+        self.assertEqual(disbursement.state, 'draft')
+        self.assertFalse(disbursement.move_id)
+        self.assertAlmostEqual(successor.restructured_funding_amount, 0.0)
+        with self.assertRaises(ValidationError):
+            successor.action_activate()
+
+    def test_successor_terms_must_match_approved_negotiation(self):
+        request = self._request()
+        request.action_submit()
+        request.action_approve()
+        request.action_prepare_successor()
+        successor = request.successor_operation_id
+        successor.interest_rate = 9.0
+        successor.action_generate_schedule()
+        self._contract_successor(request)
+        with self.assertRaisesRegex(ValidationError, 'condiciones aprobadas'):
+            request.action_complete_restructuring()
+        self.assertEqual(self.operation.state, 'active')
+        self.assertFalse(request.original_operation_closed)
+        self.assertAlmostEqual(successor.restructured_funding_amount, 0.0)
+
+    def test_changed_balance_can_replace_uncontracted_successor_with_new_approval(self):
+        self._operation_with_due_charges()
+        request = self._request()
+        request.action_submit()
+        request.action_approve()
+        request.action_prepare_successor()
+        former = request.successor_operation_id
+        self._pay(3200.0)
+        request.with_user(self.manager).action_return_to_review()
+        self.assertEqual(former.state, 'cancelled')
+        self.assertFalse(request.successor_operation_id)
+        self.assertFalse(request.approved_by)
+        request.action_refresh_proposal()
+        request.with_user(self.manager).action_approve()
+        request.with_user(self.manager).action_prepare_successor()
+        self.assertNotEqual(request.successor_operation_id, former)
+        self.assertAlmostEqual(request.successor_operation_id.financed_amount, 100000.0)
+        self.assertEqual(self.operation.state, 'active')
+
+    def test_signed_successor_cannot_be_cancelled_by_review_action(self):
+        request = self._request()
+        request.action_submit()
+        request.action_approve()
+        request.action_prepare_successor()
+        successor = self._contract_successor(request)
+        with self.assertRaisesRegex(ValidationError, 'contratada'):
+            request.action_return_to_review()
+        self.assertEqual(successor.state, 'contracted')
+        self.assertEqual(request.state, 'prepared')
+        self.assertEqual(request.successor_operation_id, successor)

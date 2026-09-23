@@ -124,7 +124,9 @@ class LenkaStatement(models.Model):
             lambda p: p.state == 'posted' and self.date_from <= p.payment_date <= self.date_to
         ).sorted('payment_date')
 
-        capital_before = sum(payments_before.mapped('capital_amount'))
+        transfers = operation.restructuring_out_ids.filtered('original_operation_closed')
+        transferred_before = sum(transfers.filtered(lambda r: r.completed_date and r.completed_date < self.date_from).mapped('approved_capital'))
+        capital_before = sum(payments_before.mapped('capital_amount')) + transferred_before
         self.opening_balance = max(operation.financed_amount - capital_before, 0.0)
 
         capital = interest = late = fees = 0.0
@@ -145,12 +147,22 @@ class LenkaStatement(models.Model):
                 'fee': payment.card_fee_amount,
             }))
 
+        for transfer in transfers.filtered(lambda r: r.completed_date and self.date_from <= r.completed_date <= self.date_to):
+            capital += transfer.approved_capital
+            lines.append((0, 0, {
+                'date': transfer.completed_date,
+                'description': _('Saldo trasladado por reestructuracion (sin cobro de efectivo)'),
+                'reference': transfer.successor_operation_id.name,
+                'capital': transfer.approved_capital,
+                'credit': transfer.approved_capital,
+            }))
+
         self.period_capital = capital
         self.period_interest = interest
         self.period_late_fees = late
         self.period_fees = fees
         self.closing_balance = max(self.opening_balance - capital, 0.0)
-        self._replace_generated_lines(lines)
+        self._replace_generated_lines(sorted(lines, key=lambda cmd: cmd[2]['date']))
 
     def _generate_investment_statement(self):
         self.ensure_one()
