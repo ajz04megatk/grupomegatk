@@ -24,7 +24,7 @@
         <field name="arch" type="xml">
             <form string="Estado de cuenta Lenka">
                 <header>
-                    <button name="action_generate" string="Generar / Recalcular" type="object" class="btn-primary" invisible="state == 'sent'"/>
+                    <button name="action_generate" string="Generar / Recalcular" type="object" class="btn-primary" invisible="state not in ('draft','generated')"/>
                     <button name="action_send_email" string="Enviar por correo" type="object" invisible="state not in ('generated','draft')"/>
                     <field name="state" widget="statusbar" statusbar_visible="draft,generated,sent"/>
                 </header>
@@ -32,15 +32,16 @@
                     <div class="oe_title"><h1><field name="name"/></h1></div>
                     <group>
                         <group>
-                            <field name="statement_type"/>
-                            <field name="partner_id"/>
-                            <field name="operation_id" invisible="statement_type != 'operation'"/>
-                            <field name="investment_id" invisible="statement_type != 'investment'"/>
+                            <field name="statement_type" readonly="state != 'draft'"/>
+                            <field name="partner_id" readonly="state != 'draft'"/>
+                            <field name="operation_id" invisible="statement_type != 'operation'" readonly="state != 'draft'"/>
+                            <field name="investment_id" invisible="statement_type != 'investment'" readonly="state != 'draft'"/>
                         </group>
                         <group>
-                            <field name="date_from"/>
-                            <field name="date_to"/>
-                            <field name="currency_id"/>
+                            <field name="date_from" readonly="state != 'draft'"/>
+                            <field name="date_to" readonly="state != 'draft'"/>
+                            <field name="currency_id" readonly="state != 'draft'"/>
+                            <field name="company_id" readonly="state != 'draft'" groups="base.group_multi_company"/>
                             <field name="sent_date" readonly="1"/>
                         </group>
                     </group>

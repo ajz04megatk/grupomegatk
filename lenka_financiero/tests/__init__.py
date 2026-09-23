@@ -3,6 +3,7 @@ from . import test_accounting
 from . import test_investment
 from . import test_payment
 from . import test_payment_access
+from . import test_operational_flow
 
 from . import test_end_to_end
 

@@ -128,29 +128,30 @@ class LenkaFinancialOperation(models.Model):
         return principal * monthly_rate / (1 - (1 + monthly_rate) ** -periods)
 
     def action_generate_schedule(self):
+        self.check_access('write')
+        # Validar el lote antes de reemplazar tablas existentes.
         for rec in self:
             if rec.state in ('active', 'done') or rec.disbursement_ids.filtered(lambda d: d.state == 'posted'):
                 raise ValidationError(_('No se puede reemplazar la tabla de amortizacion despues de un desembolso. Use una reestructuracion para conservar el historial contractual.'))
+            if rec.calculation_method != 'custom' and rec.financed_amount <= 0:
+                raise ValidationError(_('El monto financiado debe ser mayor que cero para generar el plan.'))
+            if rec.calculation_method == 'balloon' and any(line.installment_number > rec.term_months for line in rec.extra_payment_line_ids):
+                raise ValidationError(_('Hay pagos extraordinarios asignados a cuotas fuera del plazo.'))
+        for rec in self:
             if rec.calculation_method == 'custom':
                 continue
-            rec.schedule_line_ids.unlink()
             principal = rec.financed_amount
             n = rec.term_months
             monthly_rate = rec._monthly_rate()
             balance = principal
             payment_date = rec.first_payment_date or fields.Date.add(rec.date, months=1)
+            first_payment_date = payment_date
             lines = []
-            if not principal:
-                raise ValidationError(_('El monto financiado debe ser mayor que cero para generar el plan.'))
-
             level_payment = rec._level_payment(principal, monthly_rate, n) if rec.calculation_method in ('level', 'balloon') else 0.0
             fixed_capital = principal / n if rec.calculation_method == 'balance' else 0.0
-            extras = {line.installment_number: line.amount for line in rec.extra_payment_line_ids}
-            if rec.calculation_method == 'balloon' and rec.extra_payment_line_ids:
-                invalid = rec.extra_payment_line_ids.filtered(lambda l: l.installment_number > n)
-                if invalid:
-                    raise ValidationError(_('Hay pagos extraordinarios asignados a cuotas fuera del plazo.'))
-
+            extras = {}
+            for line in rec.extra_payment_line_ids:
+                extras[line.installment_number] = extras.get(line.installment_number, 0.0) + line.amount
             rounding = rec.currency_id.round if rec.currency_id else (lambda value: value)
 
             for number in range(1, n + 1):
@@ -195,15 +196,23 @@ class LenkaFinancialOperation(models.Model):
                     'closing_balance': end_balance,
                 }))
                 balance = end_balance
-                payment_date = fields.Date.add(payment_date, months=1)
+                payment_date = fields.Date.add(first_payment_date, months=number)
 
-            rec.schedule_line_ids = lines
+            # Escritura limitada al detalle calculado de una operacion autorizada.
+            # El usuario conserva solo lectura sobre las cuotas individuales.
+            rec.schedule_line_ids.sudo().unlink()
+            self.env['lenka.amortization.line'].sudo().create([
+                dict(command[2], operation_id=rec.id) for command in lines
+            ])
         return True
 
     def action_convert_to_application(self):
+        self.check_access('write')
         for rec in self:
             if not rec.is_quote:
                 continue
+            if rec.state not in ('draft', 'review'):
+                raise ValidationError(_('Solo una cotizacion en borrador o revision puede convertirse en solicitud.'))
             if not rec.schedule_line_ids and rec.calculation_method != 'custom':
                 rec.action_generate_schedule()
             rec.write({'is_quote': False, 'state': 'review'})
@@ -264,7 +273,7 @@ class LenkaFundingLine(models.Model):
     cost_rate = fields.Float(string='Costo financiero (%)')
     cost_period = fields.Selection([('monthly', 'Mensual'), ('annual', 'Anual')], default='annual')
 
-    @api.constrains('amount', 'cost_rate')
+    @api.constrains('amount', 'cost_rate', 'source_type', 'partner_id', 'operation_id')
     def _check_values(self):
         for rec in self:
             if rec.amount <= 0:
@@ -273,6 +282,8 @@ class LenkaFundingLine(models.Model):
                 raise ValidationError(_('El costo financiero no puede ser negativo.'))
             if rec.source_type in ('bank_loan', 'credit_card', 'investor', 'third_party') and not rec.partner_id:
                 raise ValidationError(_('Seleccione el banco, inversionista o tercero que proporciona esta fuente de fondeo.'))
+            if sum(rec.operation_id.funding_line_ids.mapped('amount')) > rec.operation_id.financed_amount + 0.01:
+                raise ValidationError(_('El fondeo total no puede exceder el monto financiado.'))
 
 
 class LenkaGuarantee(models.Model):

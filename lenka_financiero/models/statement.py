@@ -23,17 +23,17 @@ class LenkaStatement(models.Model):
     currency_id = fields.Many2one('res.currency', required=True)
     date_from = fields.Date(string='Desde', required=True)
     date_to = fields.Date(string='Hasta', required=True)
-    opening_balance = fields.Monetary(string='Saldo inicial')
-    closing_balance = fields.Monetary(string='Saldo final')
-    period_interest = fields.Monetary(string='Intereses del periodo')
-    period_late_fees = fields.Monetary(string='Mora del periodo')
-    period_capital = fields.Monetary(string='Capital del periodo')
-    period_fees = fields.Monetary(string='Comisiones / cargos')
-    line_ids = fields.One2many('lenka.statement.line', 'statement_id', string='Movimientos')
+    opening_balance = fields.Monetary(string='Saldo inicial', copy=False)
+    closing_balance = fields.Monetary(string='Saldo final', copy=False)
+    period_interest = fields.Monetary(string='Intereses del periodo', copy=False)
+    period_late_fees = fields.Monetary(string='Mora del periodo', copy=False)
+    period_capital = fields.Monetary(string='Capital del periodo', copy=False)
+    period_fees = fields.Monetary(string='Comisiones / cargos', copy=False)
+    line_ids = fields.One2many('lenka.statement.line', 'statement_id', string='Movimientos', copy=False)
     state = fields.Selection([
         ('draft', 'Borrador'), ('generated', 'Generado'), ('sent', 'Enviado'), ('cancelled', 'Cancelado')
-    ], default='draft', tracking=True)
-    sent_date = fields.Datetime(string='Enviado el', readonly=True)
+    ], default='draft', tracking=True, copy=False)
+    sent_date = fields.Datetime(string='Enviado el', readonly=True, copy=False)
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -42,11 +42,36 @@ class LenkaStatement(models.Model):
                 vals['name'] = self.env['ir.sequence'].next_by_code('lenka.statement') or 'Nuevo'
         return super().create(vals_list)
 
-    @api.constrains('statement_type', 'operation_id', 'investment_id', 'date_from', 'date_to')
+    @api.onchange('statement_type', 'operation_id', 'investment_id')
+    def _onchange_source(self):
+        for rec in self:
+            if rec.statement_type == 'operation':
+                rec.investment_id = False
+                source = rec.operation_id
+            else:
+                rec.operation_id = False
+                source = rec.investment_id
+            if source:
+                rec.partner_id = source.partner_id
+                rec.company_id = source.company_id
+                rec.currency_id = source.currency_id
+
+    def write(self, vals):
+        identity = {'statement_type', 'partner_id', 'operation_id', 'investment_id', 'company_id', 'currency_id', 'date_from', 'date_to'}
+        results = {'opening_balance', 'closing_balance', 'period_interest', 'period_late_fees', 'period_capital', 'period_fees', 'line_ids', 'state', 'sent_date'}
+        if identity.intersection(vals) and any(rec.state != 'draft' for rec in self):
+            raise ValidationError(_('El periodo y origen de un estado de cuenta generado no pueden modificarse. Dupliquelo para preparar un nuevo borrador.'))
+        if results.intersection(vals) and any(rec.state in ('sent', 'cancelled') for rec in self):
+            raise ValidationError(_('Un estado de cuenta enviado o cancelado no puede modificarse.'))
+        return super().write(vals)
+
+    @api.constrains('statement_type', 'operation_id', 'investment_id', 'partner_id', 'company_id', 'currency_id', 'date_from', 'date_to')
     def _check_statement(self):
         for rec in self:
             if rec.date_from > rec.date_to:
                 raise ValidationError(_('La fecha inicial no puede ser posterior a la fecha final.'))
+            if rec.operation_id and rec.investment_id:
+                raise ValidationError(_('Seleccione solo una operacion o una inversion para el estado de cuenta.'))
             if rec.statement_type == 'operation' and not rec.operation_id:
                 raise ValidationError(_('Seleccione una operacion financiera.'))
             if rec.statement_type == 'operation' and rec.operation_id and rec.operation_id.partner_id != rec.partner_id:
@@ -59,10 +84,18 @@ class LenkaStatement(models.Model):
                 raise ValidationError(_('El inversionista del estado de cuenta debe coincidir con la inversion seleccionada.'))
             if rec.statement_type == 'investment' and rec.investment_id and rec.investment_id.company_id != rec.company_id:
                 raise ValidationError(_('La empresa del estado de cuenta debe coincidir con la empresa de la inversion.'))
+            source = rec.operation_id if rec.statement_type == 'operation' else rec.investment_id
+            if source and rec.currency_id != source.currency_id:
+                raise ValidationError(_('La moneda del estado de cuenta debe coincidir con la de su operacion o inversion.'))
 
     def action_generate(self):
+        self.check_access('write')
+        self.mapped('operation_id').check_access('read')
+        self.mapped('investment_id').check_access('read')
+        self._check_statement()
+        if any(rec.state not in ('draft', 'generated') for rec in self):
+            raise ValidationError(_('Solo pueden generarse estados de cuenta en borrador o generados.'))
         for rec in self:
-            rec.line_ids.unlink()
             if rec.statement_type == 'operation':
                 rec._generate_operation_statement()
             else:
@@ -70,12 +103,18 @@ class LenkaStatement(models.Model):
             rec.state = 'generated'
         return True
 
+    def _replace_generated_lines(self, commands):
+        self.ensure_one()
+        self.check_access('write')
+        # Solo el detalle calculado; no cambiar los permisos de edicion manual.
+        self.line_ids.sudo().unlink()
+        self.env['lenka.statement.line'].sudo().create([
+            dict(command[2], statement_id=self.id) for command in commands
+        ])
+
     def _generate_operation_statement(self):
         self.ensure_one()
         operation = self.operation_id
-        self.partner_id = operation.partner_id
-        self.company_id = operation.company_id
-        self.currency_id = operation.currency_id
 
         lines = []
         payments_before = operation.payment_ids.filtered(
@@ -111,14 +150,11 @@ class LenkaStatement(models.Model):
         self.period_late_fees = late
         self.period_fees = fees
         self.closing_balance = max(self.opening_balance - capital, 0.0)
-        self.line_ids = lines
+        self._replace_generated_lines(lines)
 
     def _generate_investment_statement(self):
         self.ensure_one()
         investment = self.investment_id
-        self.partner_id = investment.partner_id
-        self.company_id = investment.company_id
-        self.currency_id = investment.currency_id
 
         interest_before = investment.interest_line_ids.filtered(
             lambda l: l.state in ('accrued', 'paid') and l.period_date < self.date_from
@@ -161,9 +197,12 @@ class LenkaStatement(models.Model):
         self.period_late_fees = 0.0
         self.period_fees = 0.0
         self.closing_balance = max(self.opening_balance + interest_total - withdrawal_total, 0.0)
-        self.line_ids = sorted(lines, key=lambda cmd: cmd[2].get('date') or self.date_from)
+        self._replace_generated_lines(sorted(lines, key=lambda cmd: cmd[2].get('date') or self.date_from))
 
     def action_send_email(self):
+        self.check_access('write')
+        if any(rec.state not in ('draft', 'generated') for rec in self):
+            raise ValidationError(_('Solo pueden enviarse estados de cuenta en borrador o generados.'))
         for rec in self:
             if rec.state == 'draft':
                 rec.action_generate()

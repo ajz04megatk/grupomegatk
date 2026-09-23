@@ -7,6 +7,68 @@ from odoo.tests.common import TransactionCase
 
 class TestLenkaStatement(TransactionCase):
 
+    def _statement(self):
+        return self.env['lenka.statement'].create({
+            'statement_type': 'operation', 'partner_id': self.partner.id,
+            'operation_id': self.operation.id, 'company_id': self.operation.company_id.id,
+            'currency_id': self.operation.currency_id.id,
+            'date_from': fields.Date.today(), 'date_to': fields.Date.add(fields.Date.today(), months=2),
+        })
+
+    def test_draft_identity_edits_are_revalidated(self):
+        statement = self._statement()
+        other_currency = self.env['res.currency'].with_context(active_test=False).search([('id', '!=', statement.currency_id.id)], limit=1)
+        other_company = self.env['res.company'].create({'name': 'Empresa estado incorrecto'})
+        for vals in [{'partner_id': self.other_partner.id}, {'currency_id': other_currency.id}, {'company_id': other_company.id}]:
+            with self.subTest(vals=vals), self.assertRaises(ValidationError), self.cr.savepoint():
+                statement.write(vals)
+
+    def test_sent_statement_cannot_be_regenerated_or_rewritten(self):
+        statement = self._statement()
+        statement.action_generate()
+        statement.write({'state': 'sent', 'sent_date': fields.Datetime.now()})
+        for vals in [{'date_to': fields.Date.today()}, {'closing_balance': 1.0}, {'state': 'draft'}]:
+            with self.subTest(vals=vals), self.assertRaises(ValidationError):
+                statement.write(vals)
+        with self.assertRaises(ValidationError):
+            statement.action_generate()
+        with self.assertRaisesRegex(ValidationError, 'Solo pueden enviarse'):
+            statement.action_send_email()
+
+    def test_generated_statement_period_cannot_change(self):
+        statement = self._statement()
+        statement.action_generate()
+        with self.assertRaises(ValidationError):
+            statement.date_from = fields.Date.add(statement.date_from, days=1)
+
+    def test_duplicate_statement_is_clean_draft(self):
+        statement = self._statement()
+        statement.action_generate()
+        statement.write({'state': 'sent', 'sent_date': fields.Datetime.now()})
+        copy = statement.copy()
+        self.assertEqual(copy.state, 'draft')
+        self.assertFalse(copy.sent_date)
+        self.assertFalse(copy.line_ids)
+        self.assertAlmostEqual(copy.opening_balance, 0.0, places=2)
+        self.assertAlmostEqual(copy.closing_balance, 0.0, places=2)
+        copy.action_generate()
+        self.assertEqual(copy.closing_balance, statement.closing_balance)
+
+    def test_cancelled_statement_cannot_be_generated_or_sent(self):
+        statement = self._statement()
+        statement.state = 'cancelled'
+        with self.assertRaises(ValidationError):
+            statement.action_generate()
+        with self.assertRaisesRegex(ValidationError, 'Solo pueden enviarse'):
+            statement.action_send_email()
+
+    def test_onchange_source_fills_identity_and_currency(self):
+        statement = self.env['lenka.statement'].new({'statement_type': 'operation', 'operation_id': self.operation.id})
+        statement._onchange_source()
+        self.assertEqual(statement.partner_id, self.partner)
+        self.assertEqual(statement.company_id, self.operation.company_id)
+        self.assertEqual(statement.currency_id, self.operation.currency_id)
+
     @classmethod
     def setUpClass(cls):
         super().setUpClass()

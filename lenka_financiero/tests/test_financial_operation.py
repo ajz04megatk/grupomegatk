@@ -4,6 +4,77 @@ from odoo.exceptions import ValidationError
 
 class TestLenkaFinancialOperation(TransactionCase):
 
+    def test_monthly_dates_keep_original_day_after_february(self):
+        from odoo import fields
+        for start, dates in [
+            ('2027-01-31', ['2027-01-31', '2027-02-28', '2027-03-31', '2027-04-30']),
+            ('2028-01-30', ['2028-01-30', '2028-02-29', '2028-03-30', '2028-04-30']),
+        ]:
+            with self.subTest(start=start):
+                operation = self._operation('level', term=4)
+                operation.first_payment_date = start
+                operation.action_generate_schedule()
+                self.assertEqual(operation.schedule_line_ids.sorted('sequence').mapped('date'), [fields.Date.to_date(d) for d in dates])
+
+    def test_extra_payments_in_same_installment_are_added(self):
+        operation = self._operation('balloon')
+        operation.extra_payment_line_ids = [
+            (0, 0, {'installment_number': 6, 'amount': 5000.0}),
+            (0, 0, {'installment_number': 6, 'amount': 7000.0}),
+        ]
+        operation.action_generate_schedule()
+        sixth = operation.schedule_line_ids.filtered(lambda line: line.sequence == 6)
+        self.assertAlmostEqual(sixth.extra_charge, 12000.0, places=2)
+        self.assertAlmostEqual(sum(operation.schedule_line_ids.mapped('capital')), 100000.0, places=2)
+
+    def test_invalid_regeneration_preserves_existing_schedule(self):
+        operation = self._operation('balloon')
+        operation.action_generate_schedule()
+        original = operation.schedule_line_ids
+        operation.extra_payment_line_ids = [(0, 0, {'installment_number': 13, 'amount': 1000.0})]
+        with self.assertRaises(ValidationError):
+            operation.action_generate_schedule()
+        self.assertEqual(operation.schedule_line_ids, original)
+        self.assertTrue(original.exists())
+
+    def test_mixed_valid_and_active_batch_preserves_all_schedules(self):
+        draft = self._operation('level')
+        active = self._operation('level')
+        (draft | active).action_generate_schedule()
+        original = draft.schedule_line_ids
+        active.state = 'active'
+        with self.assertRaises(ValidationError):
+            (draft | active).action_generate_schedule()
+        self.assertEqual(draft.schedule_line_ids, original)
+
+    def test_funding_edit_cannot_exceed_financed_total(self):
+        operation = self._operation('level')
+        lines = self.env['lenka.funding.line'].create([
+            {'operation_id': operation.id, 'source_type': 'own', 'amount': 60000.0},
+            {'operation_id': operation.id, 'source_type': 'cash', 'amount': 40000.0},
+        ])
+        with self.assertRaises(ValidationError), self.cr.savepoint():
+            lines[1].amount = 50000.0
+        self.assertAlmostEqual(sum(operation.funding_line_ids.mapped('amount')), 100000.0, places=2)
+
+    def test_funding_source_edit_requires_provider(self):
+        operation = self._operation('level')
+        funding = self.env['lenka.funding.line'].create({'operation_id': operation.id, 'source_type': 'own', 'amount': 50000.0})
+        with self.assertRaises(ValidationError), self.cr.savepoint():
+            funding.source_type = 'bank_loan'
+        funding.write({'source_type': 'bank_loan', 'partner_id': self.partner.id})
+        with self.assertRaises(ValidationError), self.cr.savepoint():
+            funding.partner_id = False
+
+    def test_funding_cannot_be_moved_to_smaller_operation(self):
+        original = self._operation('level')
+        smaller = self._operation('level')
+        smaller.principal_amount = 10000.0
+        funding = self.env['lenka.funding.line'].create({'operation_id': original.id, 'source_type': 'own', 'amount': 50000.0})
+        with self.assertRaises(ValidationError), self.cr.savepoint():
+            funding.operation_id = smaller
+        self.assertEqual(funding.operation_id, original)
+
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
