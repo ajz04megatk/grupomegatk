@@ -139,3 +139,59 @@ class TestLenkaStatement(TransactionCase):
                 'date_from': today,
                 'date_to': today - timedelta(days=1),
             })
+
+    def _taxed_investment_statement(self, date_from='2025-01-15', date_to='2025-02-15', withdraw=False):
+        investment = self.env['lenka.investment'].create({
+            'partner_id': self.partner.id, 'principal_amount': 10000.0,
+            'passive_rate': 10.0, 'early_withdrawal_rate': 1.0,
+            'rate_period': 'monthly', 'start_date': '2025-01-15',
+            'maturity_date': '2025-02-15', 'capitalization': 'maturity',
+        })
+        investment.action_activate()
+        interest = self.env['lenka.investment.interest'].create({
+            'investment_id': investment.id, 'period_date': '2025-02-15',
+            'base_amount': 10000.0, 'rate': 10.0, 'amount': 1000.0,
+            'tax_rate': 10.0, 'state': 'accrued',
+        })
+        if withdraw:
+            self.env['lenka.investment.withdrawal'].create({
+                'investment_id': investment.id, 'principal_amount': 10000.0,
+                'date': '2025-02-15',
+            }).action_post()
+        statement = self.env['lenka.statement'].create({
+            'statement_type': 'investment', 'partner_id': self.partner.id,
+            'investment_id': investment.id, 'company_id': investment.company_id.id,
+            'currency_id': investment.currency_id.id, 'date_from': date_from, 'date_to': date_to,
+        })
+        statement.action_generate()
+        return statement, interest
+
+    def test_investment_statement_separates_withholding_from_investor_balance(self):
+        statement, interest = self._taxed_investment_statement()
+        self.assertAlmostEqual(statement.closing_balance, 10900.0)
+        self.assertAlmostEqual(statement.period_interest, 1000.0)
+        self.assertEqual(len(statement.line_ids), 2)
+        self.assertAlmostEqual(sum(statement.line_ids.mapped('debit')), 100.0)
+        self.assertAlmostEqual(sum(statement.line_ids.mapped('credit')), interest.amount)
+        statement.action_generate()
+        self.assertEqual(len(statement.line_ids), 2)
+        self.assertAlmostEqual(statement.closing_balance, 10900.0)
+
+    def test_fully_withdrawn_investment_has_no_residual_tax_balance(self):
+        statement, interest = self._taxed_investment_statement(withdraw=True)
+        self.assertEqual(interest.state, 'paid')
+        self.assertAlmostEqual(statement.closing_balance, 0.0)
+        self.assertAlmostEqual(statement.opening_balance + sum(statement.line_ids.mapped('credit'))
+                               - sum(statement.line_ids.mapped('debit')), 0.0)
+
+    def test_investment_opening_balance_uses_net_interest(self):
+        statement, _ = self._taxed_investment_statement(date_from='2025-03-01', date_to='2025-03-31')
+        self.assertAlmostEqual(statement.opening_balance, 10900.0)
+        self.assertAlmostEqual(statement.closing_balance, 10900.0)
+        self.assertFalse(statement.line_ids)
+
+    def test_closed_investment_next_statement_opens_at_zero(self):
+        statement, _ = self._taxed_investment_statement(date_from='2025-03-01', date_to='2025-03-31', withdraw=True)
+        self.assertAlmostEqual(statement.opening_balance, 0.0)
+        self.assertAlmostEqual(statement.closing_balance, 0.0)
+        self.assertFalse(statement.line_ids)
