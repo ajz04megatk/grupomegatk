@@ -210,7 +210,7 @@ class LenkaStatement(models.Model):
                 raise ValidationError(_('El cliente no tiene correo electronico.'))
 
             report = self.env.ref('lenka_financiero.action_report_lenka_statement')
-            pdf_content, _ = report._render_qweb_pdf(report.report_name, res_ids=rec.ids)
+            pdf_content, report_format = report._render_qweb_pdf(report.report_name, res_ids=rec.ids)
             attachment = self.env['ir.attachment'].create({
                 'name': '%s.pdf' % rec.name,
                 'type': 'binary',
