@@ -93,6 +93,8 @@ class LenkaPayment(models.Model):
                 raise ValidationError(_('La comision de tarjeta debe estar entre 0% y 100%.'))
 
     def action_post(self):
+        self.check_access('write')
+        self.mapped('operation_id').check_access('read')
         for rec in self:
             if rec.state != 'draft':
                 continue
@@ -100,6 +102,8 @@ class LenkaPayment(models.Model):
                 raise ValidationError(_('Solo se pueden aplicar cobros a operaciones activas.'))
             if not rec.operation_id.schedule_line_ids:
                 raise ValidationError(_('La operacion no tiene tabla de amortizacion.'))
+            if rec.allocation_line_ids:
+                raise ValidationError(_('El cobro en borrador ya tiene una distribucion. Revise su historial antes de aplicarlo.'))
 
             # IMPORTANTE: si el pago es con tarjeta, solo el neto recibido despues
             # de la comision bancaria se aplica a la deuda del cliente.
@@ -120,7 +124,9 @@ class LenkaPayment(models.Model):
                     continue
                 pay_late = min(remaining, due_late)
                 remaining -= pay_late
-                line.late_fee_paid += pay_late
+                # La cuota es de solo lectura para el operador. Actualizar solo
+                # los importes calculados tras comprobar el acceso al cobro.
+                line.sudo().write({'late_fee_paid': line.late_fee_paid + pay_late})
                 late_total += pay_late
                 allocations.append((0, 0, {
                     'schedule_line_id': line.id,
@@ -136,7 +142,7 @@ class LenkaPayment(models.Model):
                     continue
                 pay_interest = min(remaining, due_interest)
                 remaining -= pay_interest
-                line.interest_paid += pay_interest
+                line.sudo().write({'interest_paid': line.interest_paid + pay_interest})
                 interest_total += pay_interest
                 allocations.append((0, 0, {
                     'schedule_line_id': line.id,
@@ -157,7 +163,7 @@ class LenkaPayment(models.Model):
                 pay_capital = min(remaining, due_capital, capital_available)
                 remaining -= pay_capital
                 capital_available -= pay_capital
-                line.capital_paid += pay_capital
+                line.sudo().write({'capital_paid': line.capital_paid + pay_capital})
                 capital_total += pay_capital
                 allocations.append((0, 0, {
                     'schedule_line_id': line.id,
@@ -171,6 +177,12 @@ class LenkaPayment(models.Model):
             if extra_capital:
                 capital_total += extra_capital
 
+            # Detalle generado por el sistema; no otorgar creacion/edicion
+            # manual de distribuciones a los usuarios operativos.
+            self.env['lenka.payment.allocation'].sudo().create([
+                dict(command[2], payment_id=rec.id) for command in allocations
+            ])
+
             # Transicion interna: conservar ORM, permisos y seguimiento sin
             # permitir que write/importaciones omitan la aplicacion del pago.
             super(LenkaPayment, rec).write({
@@ -179,12 +191,13 @@ class LenkaPayment(models.Model):
                 'capital_amount': capital_total,
                 'extra_capital_amount': extra_capital,
                 'unapplied_amount': remaining,
-                'allocation_line_ids': allocations,
                 'state': 'posted',
             })
         return True
 
     def action_cancel(self):
+        self.check_access('write')
+        self.mapped('operation_id').check_access('read')
         # Validar todo el lote antes de modificar cuotas o partidas.
         for rec in self:
             if rec.state == 'cancelled':
@@ -193,6 +206,10 @@ class LenkaPayment(models.Model):
                 raise ValidationError(_('No se puede anular un cobro de una operacion cerrada o inactiva. Revise primero el cierre de la operacion y sus garantias.'))
             if rec.move_id and rec.move_id.state == 'posted':
                 raise ValidationError(_('No se puede anular el cobro mientras su partida este publicada. Regularice su anulacion en Contabilidad antes de continuar.'))
+            for alloc in rec.allocation_line_ids:
+                alloc.schedule_line_id.check_access('read')
+                if alloc.schedule_line_id.operation_id != rec.operation_id:
+                    raise ValidationError(_('La distribucion del cobro contiene una cuota de otra operacion.'))
         for rec in self:
             if rec.state == 'cancelled':
                 continue
@@ -203,7 +220,7 @@ class LenkaPayment(models.Model):
                 continue
             for alloc in rec.allocation_line_ids:
                 line = alloc.schedule_line_id
-                line.write({
+                line.sudo().write({
                     'late_fee_paid': max(line.late_fee_paid - alloc.late_fee_amount, 0.0),
                     'interest_paid': max(line.interest_paid - alloc.interest_amount, 0.0),
                     'capital_paid': max(line.capital_paid - alloc.capital_amount, 0.0),
