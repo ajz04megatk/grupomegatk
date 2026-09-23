@@ -2,6 +2,9 @@ from odoo import api, fields, models, _
 from odoo.exceptions import ValidationError
 
 
+_WITHDRAWAL_RESULTS = {'gross_interest_amount', 'interest_tax_amount',
+                       'accrued_interest_amount', 'effective_rate'}
+
 class LenkaInvestment(models.Model):
     _name = 'lenka.investment'
     _description = 'Inversion / Deposito Lenka'
@@ -18,6 +21,7 @@ class LenkaInvestment(models.Model):
     principal_amount = fields.Monetary(string='Capital recibido', required=True, tracking=True)
     passive_rate = fields.Float(string='Tasa contractual preferencial (%)', required=True, tracking=True)
     early_withdrawal_rate = fields.Float(string='Tasa por retiro anticipado (%)', default=0.0, tracking=True)
+    current_rate = fields.Float(string='Tasa vigente (%)', compute='_compute_current_rate')
     rate_period = fields.Selection([('monthly', 'Mensual'), ('annual', 'Anual')], default='annual', required=True)
     start_date = fields.Date(string='Fecha de inicio', required=True, default=fields.Date.context_today)
     maturity_date = fields.Date(string='Vencimiento')
@@ -75,7 +79,14 @@ class LenkaInvestment(models.Model):
 
     def _monthly_rate(self):
         self.ensure_one()
-        return self._monthly_rate_for(self.passive_rate)
+        return self._monthly_rate_for(self.current_rate)
+
+    @api.depends('passive_rate', 'withdrawal_ids.state', 'withdrawal_ids.early_withdrawal',
+                 'withdrawal_ids.effective_rate', 'withdrawal_ids.date')
+    def _compute_current_rate(self):
+        for rec in self:
+            early = rec.withdrawal_ids.filtered(lambda w: w.state == 'posted' and w.early_withdrawal).sorted('date')[:1]
+            rec.current_rate = early.effective_rate if early else rec.passive_rate
 
     def action_activate(self):
         for rec in self:
@@ -94,25 +105,37 @@ class LenkaInvestment(models.Model):
 
     def _generate_interest_until(self, end_date, rate, replace=False):
         self.ensure_one()
+        self.check_access('write')
         if replace:
             if self.interest_line_ids.filtered(lambda l: l.state != 'paid' and (l.move_id or l.adjustment_move_id)):
                 raise ValidationError(_('Debe regularizar los asientos de intereses antes de recalcular el retiro anticipado.'))
-            self.interest_line_ids.filtered(lambda l: l.state != 'paid').unlink()
-        monthly_rate = self._monthly_rate_for(rate)
+            self.interest_line_ids.filtered(lambda l: l.state != 'paid').sudo().unlink()
         base = self.principal_amount
+        withdrawals = self.withdrawal_ids.filtered(lambda w: w.state == 'posted').sorted(key=lambda w: (w.date, w.id))
+        processed = self.env['lenka.investment.withdrawal']
+        applied_rate = rate
         period = 1
         current = fields.Date.add(self.start_date, months=period)
         existing_dates = set(self.interest_line_ids.filtered(lambda l: l.state != 'cancelled').mapped('period_date'))
         while current <= end_date:
             if self.maturity_date and current > self.maturity_date:
                 break
+            prior = withdrawals.filtered(lambda w: w.date < current)
+            if prior - processed:
+                # El retiro liquida el interes pendiente. Solo el capital que
+                # permanece vuelve a generar interes; nunca el interes pagado.
+                base = max(self.principal_amount - sum(prior.mapped('principal_amount')), 0.0)
+                early = prior.filtered('early_withdrawal')[:1]
+                if early:
+                    applied_rate = early.effective_rate
+                processed = prior
             if current not in existing_dates:
-                amount = base * monthly_rate
+                amount = base * self._monthly_rate_for(applied_rate)
                 self.env['lenka.investment.interest'].create({
                     'investment_id': self.id,
                     'period_date': current,
                     'base_amount': base,
-                    'rate': rate,
+                    'rate': applied_rate,
                     'amount': amount,
                     'state': 'accrued',
                 })
@@ -149,10 +172,17 @@ class LenkaInvestment(models.Model):
 
     def action_recalculate_early_withdrawal(self, withdrawal_date):
         self.ensure_one()
+        self.check_access('write')
         if not self.maturity_date or withdrawal_date >= self.maturity_date:
             return self.accrued_interest
         if self.early_withdrawal_rate <= 0:
             raise ValidationError(_('Configure la tasa aplicable por retiro anticipado.'))
+        previous = self.withdrawal_ids.filtered(lambda w: w.state == 'posted' and w.early_withdrawal)
+        if previous:
+            if any(w.date > withdrawal_date for w in previous):
+                raise ValidationError(_('No puede recalcular antes de un retiro ya aplicado.'))
+            self._generate_interest_until(withdrawal_date, self.passive_rate)
+            return sum(self.interest_line_ids.filtered(lambda l: l.state == 'accrued' and l.period_date <= withdrawal_date).mapped('amount'))
         paid_lines = self.interest_line_ids.filtered(lambda l: l.state == 'paid')
         if paid_lines:
             raise ValidationError(_('Existen intereses ya pagados. Debe regularizarse el ajuste contable antes de recalcular el retiro anticipado.'))
@@ -208,14 +238,38 @@ class LenkaInvestmentWithdrawal(models.Model):
     currency_id = fields.Many2one(related='investment_id.currency_id', store=True)
     date = fields.Date(required=True, default=fields.Date.context_today)
     principal_amount = fields.Monetary(string='Capital a retirar', required=True)
-    gross_interest_amount = fields.Monetary(string='Interes bruto reconocido', readonly=True)
-    interest_tax_amount = fields.Monetary(string='Retencion sobre interes', readonly=True)
-    accrued_interest_amount = fields.Monetary(string='Interes neto reconocido', readonly=True)
+    gross_interest_amount = fields.Monetary(string='Interes bruto reconocido', readonly=True, copy=False)
+    interest_tax_amount = fields.Monetary(string='Retencion sobre interes', readonly=True, copy=False)
+    accrued_interest_amount = fields.Monetary(string='Interes neto reconocido', readonly=True, copy=False)
     early_withdrawal = fields.Boolean(string='Retiro anticipado', compute='_compute_early_withdrawal', store=True)
-    effective_rate = fields.Float(string='Tasa efectiva aplicada (%)', readonly=True)
+    effective_rate = fields.Float(string='Tasa efectiva aplicada (%)', readonly=True, copy=False)
     total_amount = fields.Monetary(string='Total a pagar', compute='_compute_total', store=True)
     reference = fields.Char(string='Referencia')
-    state = fields.Selection([('draft', 'Borrador'), ('posted', 'Aplicado'), ('cancelled', 'Anulado')], default='draft', tracking=True)
+    state = fields.Selection([('draft', 'Borrador'), ('posted', 'Aplicado'), ('cancelled', 'Anulado')], default='draft', tracking=True, copy=False)
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        for vals in vals_list:
+            if vals.get('state', 'draft') != 'draft' or any(vals.get(key) for key in _WITHDRAWAL_RESULTS):
+                raise ValidationError(_('Cree el retiro en borrador y utilice Aplicar retiro para calcular sus intereses.'))
+            vals['state'] = 'draft'
+            for key in _WITHDRAWAL_RESULTS:
+                vals[key] = 0.0
+        return super().create(vals_list)
+
+    def write(self, vals):
+        if _WITHDRAWAL_RESULTS.intersection(vals):
+            raise ValidationError(_('Los intereses y la tasa del retiro se calculan al aplicarlo.'))
+        if 'state' in vals and any(rec.state != vals['state'] for rec in self):
+            raise ValidationError(_('Utilice las acciones del retiro para cambiar su estado.'))
+        if {'investment_id', 'date', 'principal_amount'}.intersection(vals) and any(rec.state != 'draft' for rec in self):
+            raise ValidationError(_('No puede modificar un retiro aplicado ni su fecha o capital.'))
+        return super().write(vals)
+
+    def unlink(self):
+        if any(rec.state != 'draft' or rec.move_id or rec.adjustment_move_id for rec in self):
+            raise ValidationError(_('Solo puede eliminar retiros en borrador sin partidas contables.'))
+        return super().unlink()
 
     @api.depends('date', 'investment_id.maturity_date')
     def _compute_early_withdrawal(self):
@@ -249,29 +303,39 @@ class LenkaInvestmentWithdrawal(models.Model):
             if rec.principal_amount > investment.outstanding_principal + 0.01:
                 raise ValidationError(_('El retiro excede el capital vigente.'))
             previous_withdrawals = investment.withdrawal_ids.filtered(lambda w: w.state == 'posted' and w.id != rec.id)
-            if previous_withdrawals and rec.early_withdrawal:
-                raise ValidationError(_('Un segundo retiro anticipado requiere una reestructuracion del contrato. No se recalculara automaticamente para evitar duplicar intereses.'))
+            if any(w.date > rec.date for w in previous_withdrawals):
+                raise ValidationError(_('No puede aplicar un retiro anterior a otro retiro ya aplicado.'))
+            future_interest = investment.interest_line_ids.filtered(lambda l: l.state != 'cancelled' and l.period_date > rec.date)
+            if future_interest.filtered(lambda l: l.state == 'paid' or l.move_id or l.adjustment_move_id):
+                raise ValidationError(_('Existen intereses posteriores pagados o contabilizados. Regularicelos antes de aplicar este retiro.'))
+            future_end = max(future_interest.mapped('period_date'), default=False)
             if rec.early_withdrawal:
                 investment.action_recalculate_early_withdrawal(rec.date)
                 unpaid_interest = investment.interest_line_ids.filtered(lambda l: l.state == 'accrued' and l.period_date <= rec.date)
-                rec.write({
+                super(LenkaInvestmentWithdrawal, rec).write({
                     'gross_interest_amount': sum(unpaid_interest.mapped('amount')),
                     'interest_tax_amount': sum(unpaid_interest.mapped('tax_amount')),
                     'accrued_interest_amount': sum(unpaid_interest.mapped('net_amount')),
-                    'effective_rate': investment.early_withdrawal_rate,
+                    'effective_rate': investment.current_rate if previous_withdrawals else investment.early_withdrawal_rate,
                 })
             else:
                 investment._generate_interest_until(rec.date, investment.passive_rate)
                 unpaid_interest = investment.interest_line_ids.filtered(lambda l: l.state == 'accrued' and l.period_date <= rec.date)
-                rec.write({
+                super(LenkaInvestmentWithdrawal, rec).write({
                     'gross_interest_amount': sum(unpaid_interest.mapped('amount')),
                     'interest_tax_amount': sum(unpaid_interest.mapped('tax_amount')),
                     'accrued_interest_amount': sum(unpaid_interest.mapped('net_amount')),
-                    'effective_rate': investment.passive_rate,
+                    'effective_rate': investment.current_rate,
                 })
             if unpaid_interest:
                 unpaid_interest.write({'state': 'paid'})
-            rec.state = 'posted'
+            super(LenkaInvestmentWithdrawal, rec).write({'state': 'posted'})
+            # Rehacer solo proyecciones no pagadas ni contabilizadas posteriores
+            # al retiro; la historia liquidada permanece intacta.
+            if future_end:
+                investment.interest_line_ids.filtered(lambda l: l.state != 'cancelled' and l.period_date > rec.date).sudo().unlink()
+                if investment.outstanding_principal > 0.01:
+                    investment._generate_interest_until(future_end, investment.passive_rate)
             if investment.outstanding_principal <= 0.01:
                 investment.state = 'closed'
         return True

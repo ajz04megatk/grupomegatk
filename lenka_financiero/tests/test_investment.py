@@ -401,7 +401,10 @@ class TestLenkaInvestment(TransactionCase):
         withdrawal.action_post()
         self.assertAlmostEqual(withdrawal.accrued_interest_amount, first.net_amount)
         self.assertEqual(first.state, 'paid')
+        self.assertFalse(later.exists())
+        later = investment.interest_line_ids.filtered(lambda line: line.period_date > withdrawal.date)
         self.assertTrue(all(line.state == 'accrued' for line in later))
+        self.assertAlmostEqual(later.sorted('period_date')[0].base_amount, 99000.0)
         self.assertEqual(len(investment.interest_line_ids), 3)
 
     def test_future_withdrawal_rejected_without_generating_interest(self):
@@ -420,3 +423,132 @@ class TestLenkaInvestment(TransactionCase):
         self.assertEqual(investment.outstanding_principal, 100000.0)
         investment.principal_amount = 120000.0
         self.assertEqual(investment.outstanding_principal, 120000.0)
+
+    def _reduced_rate_investment(self):
+        return self._investment(start_date='2025-01-15', maturity_date='2026-01-15',
+                                passive_rate=1.5, early_withdrawal_rate=1.0,
+                                rate_period='monthly', principal_amount=100000.0)
+
+    def _post_withdrawal(self, investment, amount, date):
+        withdrawal = self.env['lenka.investment.withdrawal'].create({
+            'investment_id': investment.id, 'principal_amount': amount, 'date': date,
+        })
+        withdrawal.action_post()
+        return withdrawal
+
+    def test_remaining_principal_continues_at_one_percent(self):
+        investment = self._reduced_rate_investment()
+        self.assertEqual(investment.current_rate, 1.5)
+        first = self._post_withdrawal(investment, 20000.0, '2025-03-15')
+        self.assertAlmostEqual(first.gross_interest_amount, 2010.0)
+        self.assertAlmostEqual(investment.current_rate, 1.0)
+        self.assertAlmostEqual(investment.passive_rate, 1.5)
+        investment._generate_interest_until(fields.Date.to_date('2025-05-15'), investment.passive_rate)
+        later = investment.interest_line_ids.filtered(lambda line: line.period_date > first.date).sorted('period_date')
+        self.assertEqual(later.mapped('rate'), [1.0, 1.0])
+        self.assertAlmostEqual(later[0].base_amount, 80000.0)
+        self.assertAlmostEqual(later[0].amount, 800.0)
+        self.assertAlmostEqual(later[1].amount, 808.0)
+
+    def test_second_early_withdrawal_pays_only_new_interest(self):
+        investment = self._reduced_rate_investment()
+        first = self._post_withdrawal(investment, 20000.0, '2025-03-15')
+        paid_history = investment.interest_line_ids
+        second = self._post_withdrawal(investment, 30000.0, '2025-04-15')
+        self.assertAlmostEqual(second.gross_interest_amount, 800.0)
+        self.assertEqual(second.effective_rate, 1.0)
+        self.assertTrue(all(line.state == 'paid' for line in paid_history.exists()))
+        self.assertEqual(len(paid_history.exists()), 2)
+        self.assertAlmostEqual(first.gross_interest_amount, 2010.0)
+        investment._generate_interest_until(fields.Date.to_date('2025-05-15'), 1.5)
+        latest = investment.interest_line_ids.sorted('period_date')[-1]
+        self.assertAlmostEqual(latest.base_amount, 50000.0)
+        self.assertAlmostEqual(latest.amount, 500.0)
+        second.action_post()
+        self.assertAlmostEqual(investment.outstanding_principal, 50000.0)
+
+    def test_same_day_withdrawals_do_not_duplicate_interest(self):
+        investment = self._reduced_rate_investment()
+        self._post_withdrawal(investment, 20000.0, '2025-03-15')
+        second = self._post_withdrawal(investment, 30000.0, '2025-03-15')
+        self.assertAlmostEqual(second.gross_interest_amount, 0.0)
+        self.assertEqual(second.effective_rate, 1.0)
+        investment._generate_interest_until(fields.Date.to_date('2025-04-15'), 1.5)
+        self.assertAlmostEqual(investment.interest_line_ids.sorted('period_date')[-1].amount, 500.0)
+
+    def test_final_early_withdrawal_closes_without_repaying_history(self):
+        investment = self._reduced_rate_investment()
+        self._post_withdrawal(investment, 20000.0, '2025-03-15')
+        final = self._post_withdrawal(investment, 80000.0, '2025-04-15')
+        self.assertAlmostEqual(final.total_amount, 80800.0)
+        self.assertAlmostEqual(investment.outstanding_principal, 0.0)
+        self.assertEqual(investment.state, 'closed')
+
+    def test_precomputed_future_interest_rebuilt_at_reduced_rate(self):
+        investment = self._reduced_rate_investment()
+        investment._generate_interest_until(fields.Date.to_date('2025-05-15'), 1.5)
+        self._post_withdrawal(investment, 20000.0, '2025-03-15')
+        last = investment.interest_line_ids.sorted('period_date')[-1]
+        self.assertEqual(last.rate, 1.0)
+        self.assertAlmostEqual(last.amount, 808.0)
+        self.assertEqual(len(investment.interest_line_ids), 4)
+        ids = investment.interest_line_ids.ids
+        investment._generate_interest_until(fields.Date.to_date('2025-05-15'), 1.5)
+        self.assertEqual(investment.interest_line_ids.ids, ids)
+
+    def test_future_paid_interest_blocks_backdated_withdrawal(self):
+        investment = self._reduced_rate_investment()
+        investment._generate_interest_until(fields.Date.to_date('2025-05-15'), 1.5)
+        investment.interest_line_ids[-1].state = 'paid'
+        original = investment.interest_line_ids
+        with self.assertRaises(ValidationError):
+            self._post_withdrawal(investment, 20000.0, '2025-03-15')
+        self.assertEqual(investment.interest_line_ids, original)
+        self.assertAlmostEqual(investment.outstanding_principal, 100000.0)
+
+    def test_new_withdrawal_cannot_precede_applied_withdrawal(self):
+        investment = self._reduced_rate_investment()
+        self._post_withdrawal(investment, 20000.0, '2025-03-15')
+        with self.assertRaises(ValidationError):
+            self._post_withdrawal(investment, 1000.0, '2025-02-15')
+        self.assertAlmostEqual(investment.outstanding_principal, 80000.0)
+
+    def test_reduced_annual_rate_retains_period_units(self):
+        investment = self._investment(start_date='2025-01-15', maturity_date='2026-01-15',
+                                      passive_rate=18.0, early_withdrawal_rate=12.0)
+        self._post_withdrawal(investment, 20000.0, '2025-03-15')
+        investment._generate_interest_until(fields.Date.to_date('2025-04-15'), 18.0)
+        latest = investment.interest_line_ids.sorted('period_date')[-1]
+        self.assertEqual(investment.current_rate, 12.0)
+        self.assertAlmostEqual(latest.amount, 800.0)
+
+    def test_applied_withdrawal_history_cannot_be_edited_deleted_or_copied_as_paid(self):
+        investment = self._reduced_rate_investment()
+        withdrawal = self._post_withdrawal(investment, 20000.0, '2025-03-15')
+        for vals in ({'principal_amount': 30000.0}, {'date': '2025-04-15'},
+                     {'effective_rate': 1.5}, {'state': 'draft'}):
+            with self.assertRaises(ValidationError):
+                withdrawal.write(vals)
+        with self.assertRaises(ValidationError):
+            withdrawal.unlink()
+        duplicate = withdrawal.copy()
+        self.assertEqual(duplicate.state, 'draft')
+        self.assertEqual(duplicate.gross_interest_amount, 0.0)
+        self.assertEqual(duplicate.effective_rate, 0.0)
+        self.assertAlmostEqual(investment.outstanding_principal, 80000.0)
+
+    def test_withdrawal_cannot_inject_state_or_interest(self):
+        investment = self._reduced_rate_investment()
+        for extra in ({'state': 'posted'}, {'effective_rate': 1.0}, {'accrued_interest_amount': 999.0}):
+            with self.assertRaises(ValidationError):
+                self.env['lenka.investment.withdrawal'].create({
+                    'investment_id': investment.id, 'principal_amount': 20000.0, **extra,
+                })
+
+    def test_second_withdrawal_does_not_repeat_historical_accounting_adjustment(self):
+        investment = self._reduced_rate_investment()
+        self._post_withdrawal(investment, 20000.0, '2025-03-15')
+        second = self._post_withdrawal(investment, 30000.0, '2025-04-15')
+        # No debe intentar crear un ajuste historico ni requerir cuentas para ello.
+        second.action_create_early_withdrawal_adjustment()
+        self.assertFalse(second.adjustment_move_id)

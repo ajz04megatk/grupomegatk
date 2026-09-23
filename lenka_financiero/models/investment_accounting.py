@@ -149,9 +149,19 @@ class LenkaInvestmentWithdrawalAccounting(models.Model):
 
     def action_create_early_withdrawal_adjustment(self):
         for rec in self:
+            if rec.state != 'posted':
+                raise ValidationError(_('Aplique el retiro antes de preparar su ajuste contable.'))
             if not rec.early_withdrawal:
                 continue
             investment = rec.investment_id
+            previous = investment.withdrawal_ids.filtered(
+                lambda w: w.state == 'posted' and w.early_withdrawal and
+                (w.date, w.id) < (rec.date, rec.id)
+            )
+            if previous:
+                # Los retiros posteriores ya usan la tasa reducida; no revierten
+                # nuevamente los intereses historicos del primer retiro.
+                continue
             company = investment.company_id
             journal = company.lenka_investment_journal_id
             liability = company.lenka_investor_liability_account_id

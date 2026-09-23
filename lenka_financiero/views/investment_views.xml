@@ -26,7 +26,7 @@
                     <group>
                         <group><field name="partner_id"/><field name="investment_type"/><field name="principal_amount"/><field name="currency_id"/><field name="receiving_account"/></group>
                         <group>
-                            <field name="passive_rate"/><field name="early_withdrawal_rate" invisible="investment_type != 'fixed'"/>
+                            <field name="passive_rate"/><field name="early_withdrawal_rate" invisible="investment_type != 'fixed'"/><field name="current_rate" readonly="1"/>
                             <field name="rate_period"/><field name="start_date"/><field name="term_months"/><field name="maturity_date"/>
                             <field name="capitalization"/><field name="contract_reference"/>
                         </group>
