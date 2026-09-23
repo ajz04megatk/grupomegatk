@@ -103,50 +103,76 @@ class LenkaInvestment(models.Model):
             rec.state = 'active'
         return True
 
-    def _generate_interest_until(self, end_date, rate, replace=False):
+    def _generate_interest_until(self, end_date, rate, replace=False, settle_partial=False):
         self.ensure_one()
         self.check_access('write')
         if replace:
             if self.interest_line_ids.filtered(lambda l: l.state != 'paid' and (l.move_id or l.adjustment_move_id)):
                 raise ValidationError(_('Debe regularizar los asientos de intereses antes de recalcular el retiro anticipado.'))
             self.interest_line_ids.filtered(lambda l: l.state != 'paid').sudo().unlink()
-        base = self.principal_amount
+        end_date = min(end_date, self.maturity_date) if self.maturity_date else end_date
+        if end_date <= self.start_date:
+            return self.principal_amount
+
         withdrawals = self.withdrawal_ids.filtered(lambda w: w.state == 'posted').sorted(key=lambda w: (w.date, w.id))
-        processed = self.env['lenka.investment.withdrawal']
-        applied_rate = rate
+        existing = self.interest_line_ids.filtered(lambda l: l.state != 'cancelled')
+        # Conservar el aniversario mensual original incluso al cruzar febrero.
+        monthly_starts = {}
         period = 1
-        current = fields.Date.add(self.start_date, months=period)
-        existing_dates = set(self.interest_line_ids.filtered(lambda l: l.state != 'cancelled').mapped('period_date'))
-        while current <= end_date:
-            if self.maturity_date and current > self.maturity_date:
-                break
-            prior = withdrawals.filtered(lambda w: w.date < current)
+        previous_month = self.start_date
+        monthly_end = fields.Date.add(self.start_date, months=period)
+        while monthly_end <= end_date:
+            monthly_starts[monthly_end] = previous_month
+            previous_month = monthly_end
+            period += 1
+            monthly_end = fields.Date.add(self.start_date, months=period)
+        boundaries = set(monthly_starts)
+        boundaries.update(w.date for w in withdrawals if self.start_date < w.date <= end_date)
+        boundaries.update(l.period_date for l in existing if self.start_date < l.period_date <= end_date)
+        if settle_partial or end_date == self.maturity_date:
+            boundaries.add(end_date)
+
+        base = self.principal_amount
+        uncapitalized = 0.0
+        applied_rate = rate
+        processed = self.env['lenka.investment.withdrawal']
+        previous_date = self.start_date
+        for current in sorted(boundaries):
+            prior = withdrawals.filtered(lambda w: w.date <= previous_date)
             if prior - processed:
-                # El retiro liquida el interes pendiente. Solo el capital que
-                # permanece vuelve a generar interes; nunca el interes pagado.
+                # Todo el interes exigible se liquida en el retiro. Reiniciar
+                # sobre el capital restante, sin capitalizar intereses pagados.
                 base = max(self.principal_amount - sum(prior.mapped('principal_amount')), 0.0)
+                uncapitalized = 0.0
                 early = prior.filtered('early_withdrawal')[:1]
                 if early:
                     applied_rate = early.effective_rate
                 processed = prior
-            if current not in existing_dates:
-                amount = base * self._monthly_rate_for(applied_rate)
+            line = existing.filtered(lambda l: l.period_date == current)[:1]
+            if line:
+                # No recalcular ni reemplazar la historia liquidada/contabilizada.
+                base = line.base_amount
+                amount = line.amount
+            else:
+                full_month = monthly_starts.get(current) == previous_date
+                days = 30 if full_month else (current - previous_date).days
+                amount = self.currency_id.round(base * self._monthly_rate_for(applied_rate) * days / 30.0)
                 self.env['lenka.investment.interest'].create({
                     'investment_id': self.id,
+                    'period_start_date': previous_date,
                     'period_date': current,
+                    'calculation_days': days,
+                    'is_prorated': not full_month,
                     'base_amount': base,
                     'rate': applied_rate,
                     'amount': amount,
                     'state': 'accrued',
                 })
-                if self.capitalization == 'monthly':
-                    base += amount
-            else:
-                existing = self.interest_line_ids.filtered(lambda l: l.period_date == current and l.state != 'cancelled')[:1]
-                if existing and self.capitalization == 'monthly':
-                    base = existing.base_amount + existing.amount
-            period += 1
-            current = fields.Date.add(self.start_date, months=period)
+            uncapitalized += amount
+            if current in monthly_starts and self.capitalization == 'monthly':
+                base += uncapitalized
+                uncapitalized = 0.0
+            previous_date = current
         return base
 
     def action_generate_monthly_interest(self):
@@ -181,12 +207,12 @@ class LenkaInvestment(models.Model):
         if previous:
             if any(w.date > withdrawal_date for w in previous):
                 raise ValidationError(_('No puede recalcular antes de un retiro ya aplicado.'))
-            self._generate_interest_until(withdrawal_date, self.passive_rate)
+            self._generate_interest_until(withdrawal_date, self.passive_rate, settle_partial=True)
             return sum(self.interest_line_ids.filtered(lambda l: l.state == 'accrued' and l.period_date <= withdrawal_date).mapped('amount'))
         paid_lines = self.interest_line_ids.filtered(lambda l: l.state == 'paid')
         if paid_lines:
             raise ValidationError(_('Existen intereses ya pagados. Debe regularizarse el ajuste contable antes de recalcular el retiro anticipado.'))
-        self._generate_interest_until(withdrawal_date, self.early_withdrawal_rate, replace=True)
+        self._generate_interest_until(withdrawal_date, self.early_withdrawal_rate, replace=True, settle_partial=True)
         return sum(self.interest_line_ids.filtered(lambda l: l.state == 'accrued' and l.period_date <= withdrawal_date).mapped('amount'))
 
 
@@ -198,6 +224,9 @@ class LenkaInvestmentInterest(models.Model):
     investment_id = fields.Many2one('lenka.investment', required=True, ondelete='cascade')
     currency_id = fields.Many2one(related='investment_id.currency_id')
     period_date = fields.Date(string='Fecha periodo', required=True)
+    period_start_date = fields.Date(string='Inicio del tramo', readonly=True)
+    calculation_days = fields.Integer(string='Dias de calculo (base 30)', readonly=True)
+    is_prorated = fields.Boolean(string='Interes proporcional', readonly=True)
     base_amount = fields.Monetary(string='Base')
     rate = fields.Float(string='Tasa (%)')
     amount = fields.Monetary(string='Interes bruto', required=True)
@@ -319,7 +348,7 @@ class LenkaInvestmentWithdrawal(models.Model):
                     'effective_rate': investment.current_rate if previous_withdrawals else investment.early_withdrawal_rate,
                 })
             else:
-                investment._generate_interest_until(rec.date, investment.passive_rate)
+                investment._generate_interest_until(rec.date, investment.passive_rate, settle_partial=True)
                 unpaid_interest = investment.interest_line_ids.filtered(lambda l: l.state == 'accrued' and l.period_date <= rec.date)
                 super(LenkaInvestmentWithdrawal, rec).write({
                     'gross_interest_amount': sum(unpaid_interest.mapped('amount')),
