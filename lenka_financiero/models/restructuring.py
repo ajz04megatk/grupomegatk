@@ -75,7 +75,8 @@ class LenkaRestructuring(models.Model):
                 raise ValidationError(_('Seleccione una operacion valida.'))
             if operation.state != 'active':
                 raise ValidationError(_('Solo se puede reestructurar una operacion activa.'))
-            vals.setdefault('name', self.env['ir.sequence'].next_by_code('lenka.restructuring') or 'Nuevo')
+            if vals.get('name', 'Nuevo') == 'Nuevo':
+                vals['name'] = self.env['ir.sequence'].next_by_code('lenka.restructuring') or 'Nuevo'
             vals['original_outstanding_capital'] = operation.outstanding_capital
             vals['original_payoff_amount'] = operation.get_payoff_amount()
             vals['original_interest_rate'] = operation.interest_rate

@@ -219,6 +219,8 @@ class TestLenkaRestructuring(TransactionCase):
         request.action_prepare_successor()
         copied = request.copy()
         self.assertEqual(copied.state, 'draft')
+        self.assertNotEqual(copied.name, 'Nuevo')
+        self.assertNotEqual(copied.name, request.name)
         self.assertFalse(copied.successor_operation_id)
         self.assertFalse(copied.original_operation_closed)
         self.assertAlmostEqual(copied.original_outstanding_capital, self.operation.outstanding_capital)
