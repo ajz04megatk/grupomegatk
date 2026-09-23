@@ -1,4 +1,5 @@
 from odoo import fields
+from odoo.exceptions import ValidationError
 from odoo.tests.common import TransactionCase
 
 
@@ -23,6 +24,111 @@ class TestLenkaPayment(TransactionCase):
         operation.action_generate_schedule()
         operation.state = 'active'
         return operation
+
+    def _draft_payment(self, operation=None):
+        operation = operation or self._operation()
+        return self.env['lenka.payment'].create({
+            'operation_id': operation.id,
+            'payment_date': operation.schedule_line_ids.sorted('sequence')[0].date,
+            'amount': 15000.0,
+            'payment_method': 'cash',
+        })
+
+    def test_applied_payment_financial_data_is_immutable(self):
+        payment = self._draft_payment()
+        payment.action_post()
+        balance = payment.operation_id.outstanding_capital
+        changes = [
+            {'amount': 20000.0},
+            {'payment_date': fields.Date.add(payment.payment_date, days=1)},
+            {'payment_method': 'card'},
+            {'card_fee_rate': 5.0},
+            {'operation_id': self._operation().id},
+        ]
+        for vals in changes:
+            with self.subTest(vals=vals), self.assertRaises(ValidationError):
+                payment.write(vals)
+        self.assertAlmostEqual(payment.amount, 15000.0, places=2)
+        self.assertAlmostEqual(payment.operation_id.outstanding_capital, balance, places=2)
+        payment.write({'notes': 'Referencia verificada', 'reference': 'REC-123'})
+        self.assertEqual(payment.reference, 'REC-123')
+
+    def test_draft_payment_can_be_edited_before_posting(self):
+        payment = self._draft_payment()
+        payment.write({'amount': 10000.0, 'payment_method': 'card', 'card_fee_rate': 4.0})
+        self.assertAlmostEqual(payment.net_bank_amount, 9600.0, places=2)
+        payment.action_post()
+        self.assertAlmostEqual(
+            payment.capital_amount + payment.interest_amount + payment.late_fee_amount
+            + payment.unapplied_amount, 9600.0, places=2,
+        )
+
+    def test_payment_cannot_skip_actions_via_create_or_write(self):
+        payment = self._draft_payment()
+        for vals in [{'state': 'posted'}, {'capital_amount': 5000.0}, {'extra_capital_amount': 5000.0}]:
+            with self.subTest(vals=vals), self.assertRaises(ValidationError):
+                payment.write(vals)
+            with self.subTest(create_vals=vals), self.assertRaises(ValidationError):
+                self.env['lenka.payment'].create({
+                    'operation_id': payment.operation_id.id,
+                    'amount': 5000.0,
+                    **vals,
+                })
+        payment.action_post()
+        for state in ['draft', 'cancelled']:
+            with self.subTest(state=state), self.assertRaises(ValidationError):
+                payment.write({'state': state})
+        payment.action_cancel()
+        self.assertEqual(payment.state, 'cancelled')
+        with self.assertRaises(ValidationError):
+            payment.write({'amount': 1000.0})
+
+    def test_duplicate_applied_payment_is_clean_draft(self):
+        payment = self._draft_payment()
+        payment.action_post()
+        balance = payment.operation_id.outstanding_capital
+        duplicate = payment.copy()
+        self.assertEqual(duplicate.state, 'draft')
+        self.assertNotEqual(duplicate.name, payment.name)
+        self.assertFalse(duplicate.allocation_line_ids)
+        self.assertFalse(duplicate.move_id)
+        for field in ['late_fee_amount', 'interest_amount', 'capital_amount', 'extra_capital_amount', 'unapplied_amount']:
+            self.assertAlmostEqual(duplicate[field], 0.0, places=2)
+        self.assertAlmostEqual(payment.operation_id.outstanding_capital, balance, places=2)
+
+    def test_applied_and_cancelled_payments_cannot_be_deleted(self):
+        payment = self._draft_payment()
+        payment.action_post()
+        with self.assertRaises(ValidationError):
+            payment.unlink()
+        payment.action_cancel()
+        with self.assertRaises(ValidationError):
+            payment.unlink()
+        draft = self._draft_payment()
+        draft.unlink()
+        self.assertFalse(draft.exists())
+
+    def test_mixed_batch_cannot_edit_applied_payment(self):
+        draft = self._draft_payment()
+        posted = self._draft_payment(draft.operation_id)
+        posted.action_post()
+        with self.assertRaises(ValidationError):
+            (draft | posted).write({'amount': 20000.0})
+        self.assertAlmostEqual(draft.amount, 15000.0, places=2)
+        self.assertAlmostEqual(posted.amount, 15000.0, places=2)
+
+    def test_repeated_post_and_cancel_do_not_duplicate_allocations(self):
+        payment = self._draft_payment()
+        operation = payment.operation_id
+        payment.action_post()
+        allocations = payment.allocation_line_ids
+        balance = operation.outstanding_capital
+        payment.action_post()
+        self.assertEqual(payment.allocation_line_ids, allocations)
+        self.assertAlmostEqual(operation.outstanding_capital, balance, places=2)
+        payment.action_cancel()
+        payment.action_cancel()
+        self.assertAlmostEqual(operation.outstanding_capital, operation.financed_amount, places=2)
 
     def test_payment_priority_late_fee_interest_capital(self):
         operation = self._operation()

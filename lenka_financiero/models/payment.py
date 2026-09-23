@@ -2,6 +2,12 @@ from odoo import api, fields, models, _
 from odoo.exceptions import ValidationError
 
 
+_PAYMENT_RESULT_FIELDS = {
+    'late_fee_amount', 'interest_amount', 'capital_amount',
+    'extra_capital_amount', 'unapplied_amount', 'allocation_line_ids',
+}
+
+
 class LenkaPayment(models.Model):
     _name = 'lenka.payment'
     _description = 'Cobro Lenka'
@@ -19,17 +25,17 @@ class LenkaPayment(models.Model):
         ('card', 'Tarjeta'), ('other', 'Otro')
     ], string='Forma de pago', required=True, default='transfer')
     reference = fields.Char(string='Referencia')
-    state = fields.Selection([('draft', 'Borrador'), ('posted', 'Aplicado'), ('cancelled', 'Anulado')], default='draft', tracking=True)
+    state = fields.Selection([('draft', 'Borrador'), ('posted', 'Aplicado'), ('cancelled', 'Anulado')], default='draft', tracking=True, copy=False)
 
     card_fee_rate = fields.Float(string='Comision tarjeta (%)', default=lambda self: self._default_card_fee_rate())
     card_fee_amount = fields.Monetary(string='Cargo bancario / tarjeta', compute='_compute_card_net', store=True)
     net_bank_amount = fields.Monetary(string='Monto neto aplicable a la deuda', compute='_compute_card_net', store=True)
 
-    late_fee_amount = fields.Monetary(string='Aplicado a mora', readonly=True)
-    interest_amount = fields.Monetary(string='Aplicado a interes', readonly=True)
-    capital_amount = fields.Monetary(string='Aplicado a capital', readonly=True)
-    extra_capital_amount = fields.Monetary(string='Abono extraordinario a capital', readonly=True)
-    unapplied_amount = fields.Monetary(string='Saldo sin aplicar', readonly=True)
+    late_fee_amount = fields.Monetary(string='Aplicado a mora', readonly=True, copy=False)
+    interest_amount = fields.Monetary(string='Aplicado a interes', readonly=True, copy=False)
+    capital_amount = fields.Monetary(string='Aplicado a capital', readonly=True, copy=False)
+    extra_capital_amount = fields.Monetary(string='Abono extraordinario a capital', readonly=True, copy=False)
+    unapplied_amount = fields.Monetary(string='Saldo sin aplicar', readonly=True, copy=False)
     allocation_line_ids = fields.One2many('lenka.payment.allocation', 'payment_id', string='Aplicacion', copy=False, readonly=True)
     notes = fields.Text(string='Observaciones')
 
@@ -54,9 +60,29 @@ class LenkaPayment(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
+            if vals.get('state', 'draft') != 'draft' or any(vals.get(key) for key in _PAYMENT_RESULT_FIELDS):
+                raise ValidationError(_('Cree el cobro en borrador y utilice Aplicar pago para calcular su distribucion.'))
+            vals['state'] = 'draft'
+            for key in _PAYMENT_RESULT_FIELDS:
+                vals[key] = [] if key == 'allocation_line_ids' else 0.0
             if vals.get('name', 'Nuevo') == 'Nuevo':
                 vals['name'] = self.env['ir.sequence'].next_by_code('lenka.payment') or 'Nuevo'
         return super().create(vals_list)
+
+    def write(self, vals):
+        if _PAYMENT_RESULT_FIELDS.intersection(vals):
+            raise ValidationError(_('La distribucion del cobro se calcula al aplicar el pago y no puede editarse manualmente.'))
+        if 'state' in vals and any(rec.state != vals['state'] for rec in self):
+            raise ValidationError(_('Utilice Aplicar pago o Anular para cambiar el estado del cobro.'))
+        financial_fields = {'operation_id', 'payment_date', 'amount', 'payment_method', 'card_fee_rate'}
+        if financial_fields.intersection(vals) and any(rec.state != 'draft' for rec in self):
+            raise ValidationError(_('Los datos financieros de un cobro aplicado o anulado no pueden modificarse. Anule el cobro mediante su accion y registre uno nuevo.'))
+        return super().write(vals)
+
+    def unlink(self):
+        if any(rec.state != 'draft' or rec.move_id for rec in self):
+            raise ValidationError(_('Solo se pueden eliminar cobros en borrador sin partida contable. Conserve los demas cobros para auditoria.'))
+        return super().unlink()
 
     @api.constrains('amount', 'card_fee_rate')
     def _check_amount(self):
@@ -145,7 +171,9 @@ class LenkaPayment(models.Model):
             if extra_capital:
                 capital_total += extra_capital
 
-            rec.write({
+            # Transicion interna: conservar ORM, permisos y seguimiento sin
+            # permitir que write/importaciones omitan la aplicacion del pago.
+            super(LenkaPayment, rec).write({
                 'late_fee_amount': late_total,
                 'interest_amount': interest_total,
                 'capital_amount': capital_total,
@@ -161,7 +189,7 @@ class LenkaPayment(models.Model):
             if rec.move_id and rec.move_id.state == 'posted':
                 raise ValidationError(_('No se puede anular el cobro mientras su asiento contable este publicado. Debe revertirse primero en Contabilidad.'))
             if rec.state != 'posted':
-                rec.state = 'cancelled'
+                super(LenkaPayment, rec).write({'state': 'cancelled'})
                 continue
             for alloc in rec.allocation_line_ids:
                 line = alloc.schedule_line_id
@@ -170,7 +198,7 @@ class LenkaPayment(models.Model):
                     'interest_paid': max(line.interest_paid - alloc.interest_amount, 0.0),
                     'capital_paid': max(line.capital_paid - alloc.capital_amount, 0.0),
                 })
-            rec.state = 'cancelled'
+            super(LenkaPayment, rec).write({'state': 'cancelled'})
         return True
 
 

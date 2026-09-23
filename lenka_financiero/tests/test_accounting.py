@@ -54,6 +54,7 @@ class TestLenkaAccounting(TransactionCase):
             payment.action_create_account_move()
 
     def test_existing_move_prevents_duplicate_creation(self):
+        self.operation.state = 'active'
         move = self.env['account.move'].create({
             'move_type': 'entry',
             'date': self.operation.date,
@@ -67,9 +68,9 @@ class TestLenkaAccounting(TransactionCase):
             'operation_id': self.operation.id,
             'amount': 500.0,
             'payment_method': 'transfer',
-            'state': 'posted',
             'move_id': move.id,
         })
+        payment.action_post()
         before = payment.move_id
         payment.action_create_account_move()
         self.assertEqual(payment.move_id, before)
