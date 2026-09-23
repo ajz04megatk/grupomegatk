@@ -1,4 +1,4 @@
-from odoo import fields, models, _
+from odoo import api, fields, models, _
 from odoo.exceptions import ValidationError
 
 
@@ -23,7 +23,22 @@ class ResConfigSettingsLenkaInvestmentAccounting(models.TransientModel):
 class LenkaInvestmentAccounting(models.Model):
     _inherit = 'lenka.investment'
 
-    receipt_move_id = fields.Many2one('account.move', string='Partida de recepcion', readonly=True, copy=False)
+    receipt_move_id = fields.Many2one('account.move', string='Partida de recepcion', readonly=True, copy=False, ondelete='restrict')
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        for vals in vals_list:
+            if any(vals.get(key) for key in ('receipt_move_id',)):
+                raise ValidationError(_('Genere las partidas mediante las acciones contables de Lenka.'))
+            for key in ('receipt_move_id',):
+                vals[key] = False
+        return super().create(vals_list)
+
+    def write(self, vals):
+        for key in ('receipt_move_id',):
+            if key in vals and any(rec[key].id != vals[key] for rec in self):
+                raise ValidationError(_('No puede reemplazar ni desvincular las partidas contables de Lenka.'))
+        return super().write(vals)
 
     def action_create_receipt_move(self):
         for rec in self:
@@ -69,15 +84,30 @@ class LenkaInvestmentAccounting(models.Model):
                 'ref': '%s - Recepcion deposito' % rec.name,
                 'line_ids': lines,
             })
-            rec.receipt_move_id = move.id
+            super(LenkaInvestmentAccounting, rec).write({'receipt_move_id': move.id})
         return True
 
 
 class LenkaInvestmentInterestAccounting(models.Model):
     _inherit = 'lenka.investment.interest'
 
-    move_id = fields.Many2one('account.move', string='Partida contable', readonly=True, copy=False)
-    adjustment_move_id = fields.Many2one('account.move', string='Partida de ajuste', readonly=True, copy=False)
+    move_id = fields.Many2one('account.move', string='Partida contable', readonly=True, copy=False, ondelete='restrict')
+    adjustment_move_id = fields.Many2one('account.move', string='Partida de ajuste', readonly=True, copy=False, ondelete='restrict')
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        for vals in vals_list:
+            if any(vals.get(key) for key in ('move_id', 'adjustment_move_id')):
+                raise ValidationError(_('Genere las partidas mediante las acciones contables de Lenka.'))
+            for key in ('move_id', 'adjustment_move_id'):
+                vals[key] = False
+        return super().create(vals_list)
+
+    def write(self, vals):
+        for key in ('move_id', 'adjustment_move_id'):
+            if key in vals and any(rec[key].id != vals[key] for rec in self):
+                raise ValidationError(_('No puede reemplazar ni desvincular las partidas contables de Lenka.'))
+        return super().write(vals)
 
     def action_create_account_move(self):
         for rec in self:
@@ -137,15 +167,30 @@ class LenkaInvestmentInterestAccounting(models.Model):
                 'ref': '%s - Interes pasivo' % investment.name,
                 'line_ids': lines,
             })
-            rec.move_id = move.id
+            super(LenkaInvestmentInterestAccounting, rec).write({'move_id': move.id})
         return True
 
 
 class LenkaInvestmentWithdrawalAccounting(models.Model):
     _inherit = 'lenka.investment.withdrawal'
 
-    move_id = fields.Many2one('account.move', string='Partida contable', readonly=True, copy=False)
-    adjustment_move_id = fields.Many2one('account.move', string='Ajuste por retiro anticipado', readonly=True, copy=False)
+    move_id = fields.Many2one('account.move', string='Partida contable', readonly=True, copy=False, ondelete='restrict')
+    adjustment_move_id = fields.Many2one('account.move', string='Ajuste por retiro anticipado', readonly=True, copy=False, ondelete='restrict')
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        for vals in vals_list:
+            if any(vals.get(key) for key in ('move_id', 'adjustment_move_id')):
+                raise ValidationError(_('Genere las partidas mediante las acciones contables de Lenka.'))
+            for key in ('move_id', 'adjustment_move_id'):
+                vals[key] = False
+        return super().create(vals_list)
+
+    def write(self, vals):
+        for key in ('move_id', 'adjustment_move_id'):
+            if key in vals and any(rec[key].id != vals[key] for rec in self):
+                raise ValidationError(_('No puede reemplazar ni desvincular las partidas contables de Lenka.'))
+        return super().write(vals)
 
     def action_create_early_withdrawal_adjustment(self):
         for rec in self:
@@ -210,7 +255,7 @@ class LenkaInvestmentWithdrawalAccounting(models.Model):
                     }),
                 ],
             })
-            rec.adjustment_move_id = move.id
+            super(LenkaInvestmentWithdrawalAccounting, rec).write({'adjustment_move_id': move.id})
         return True
 
     def action_create_account_move(self):
@@ -262,5 +307,5 @@ class LenkaInvestmentWithdrawalAccounting(models.Model):
                     }),
                 ],
             })
-            rec.move_id = move.id
+            super(LenkaInvestmentWithdrawalAccounting, rec).write({'move_id': move.id})
         return True

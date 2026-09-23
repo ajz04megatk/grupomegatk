@@ -34,7 +34,7 @@ class LenkaInvestment(models.Model):
     state = fields.Selection([
         ('draft', 'Borrador'), ('active', 'Activa'), ('matured', 'Vencida'),
         ('closed', 'Cerrada'), ('cancelled', 'Cancelada')
-    ], default='draft', tracking=True)
+    ], default='draft', tracking=True, copy=False)
     interest_line_ids = fields.One2many('lenka.investment.interest', 'investment_id', string='Intereses')
     withdrawal_ids = fields.One2many('lenka.investment.withdrawal', 'investment_id', string='Retiros')
     accrued_interest = fields.Monetary(string='Interes acumulado', compute='_compute_totals')
@@ -50,6 +50,22 @@ class LenkaInvestment(models.Model):
             if vals.get('name', 'Nuevo') == 'Nuevo':
                 vals['name'] = self.env['ir.sequence'].next_by_code('lenka.investment') or 'Nuevo'
         return super().create(vals_list)
+
+    def write(self, vals):
+        terms = {'partner_id', 'company_id', 'currency_id', 'principal_amount',
+                 'investment_type', 'passive_rate', 'early_withdrawal_rate',
+                 'rate_period', 'start_date', 'maturity_date', 'term_months', 'capitalization'}
+        if terms.intersection(vals):
+            for rec in self:
+                if (rec.receipt_move_id or rec.interest_line_ids.filtered(lambda l: l.state in ('accrued', 'paid'))
+                        or rec.withdrawal_ids.filtered(lambda w: w.state == 'posted')):
+                    raise ValidationError(_('No puede cambiar las condiciones de una inversion con movimientos registrados. Conserve su historial y formalice una nueva operacion.'))
+        return super().write(vals)
+
+    def unlink(self):
+        if any(rec.state != 'draft' or rec.receipt_move_id or rec.interest_line_ids or rec.withdrawal_ids for rec in self):
+            raise ValidationError(_('Solo puede eliminar inversiones en borrador sin movimientos.'))
+        return super().unlink()
 
     @api.constrains('principal_amount', 'passive_rate', 'early_withdrawal_rate', 'term_months', 'start_date', 'maturity_date')
     def _check_values(self):
@@ -235,6 +251,22 @@ class LenkaInvestmentInterest(models.Model):
     net_amount = fields.Monetary(string='Interes neto', compute='_compute_tax', store=True)
     state = fields.Selection([('draft', 'Borrador'), ('accrued', 'Devengado'), ('paid', 'Pagado'), ('cancelled', 'Anulado')], default='draft')
     payment_reference = fields.Char(string='Referencia de pago')
+
+    def write(self, vals):
+        financial = {'investment_id', 'period_date', 'period_start_date', 'calculation_days',
+                     'is_prorated', 'base_amount', 'rate', 'amount', 'tax_rate'}
+        if financial.intersection(vals) and any(rec.state == 'paid' or rec.move_id or rec.adjustment_move_id for rec in self):
+            raise ValidationError(_('No puede modificar intereses pagados o vinculados a una partida contable.'))
+        if 'state' in vals and any(rec.state == 'paid' and vals['state'] != 'paid' for rec in self):
+            raise ValidationError(_('No puede reabrir intereses ya pagados.'))
+        if vals.get('state') in ('draft', 'cancelled') and any(rec.move_id or rec.adjustment_move_id for rec in self):
+            raise ValidationError(_('Debe regularizar la partida contable antes de cambiar el estado del interes.'))
+        return super().write(vals)
+
+    def unlink(self):
+        if any(rec.state == 'paid' or rec.move_id or rec.adjustment_move_id for rec in self):
+            raise ValidationError(_('No puede eliminar intereses pagados o contabilizados.'))
+        return super().unlink()
 
 
     def _default_tax_rate(self):

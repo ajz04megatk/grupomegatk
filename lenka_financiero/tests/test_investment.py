@@ -552,3 +552,42 @@ class TestLenkaInvestment(TransactionCase):
         # No debe intentar crear un ajuste historico ni requerir cuentas para ello.
         second.action_create_early_withdrawal_adjustment()
         self.assertFalse(second.adjustment_move_id)
+
+    def test_paid_interest_cannot_be_reopened_changed_or_deleted(self):
+        investment = self._reduced_rate_investment()
+        self._post_withdrawal(investment, 20000.0, '2025-03-15')
+        paid = investment.interest_line_ids
+        for vals in ({'state': 'accrued'}, {'amount': 1.0}, {'tax_rate': 50.0}):
+            with self.assertRaises(ValidationError):
+                paid.write(vals)
+        with self.assertRaises(ValidationError):
+            paid.unlink()
+        self.assertAlmostEqual(investment.paid_interest, 2010.0)
+
+    def test_accrued_interest_locks_terms_but_allows_early_recalculation(self):
+        investment = self._reduced_rate_investment()
+        investment._generate_interest_until(fields.Date.to_date('2025-03-15'), 1.5)
+        with self.assertRaises(ValidationError):
+            investment.early_withdrawal_rate = .1
+        withdrawal = self._post_withdrawal(investment, 20000.0, '2025-03-15')
+        self.assertAlmostEqual(withdrawal.gross_interest_amount, 2010.0)
+        self.assertAlmostEqual(investment.current_rate, 1.0)
+
+    def test_draft_investment_without_history_can_be_corrected_and_deleted(self):
+        investment = self.env['lenka.investment'].create({
+            'partner_id': self.partner.id, 'principal_amount': 10000.0,
+            'passive_rate': 1.5, 'early_withdrawal_rate': 1.0,
+            'rate_period': 'monthly', 'term_months': 12,
+        })
+        investment.principal_amount = 12000.0
+        investment.passive_rate = 1.4
+        investment.unlink()
+        self.assertFalse(investment.exists())
+
+    def test_mixed_investment_term_edit_rejected_before_draft_changes(self):
+        used = self._reduced_rate_investment()
+        self._post_withdrawal(used, 20000.0, '2025-03-15')
+        draft = used.copy()
+        with self.assertRaises(ValidationError):
+            (draft | used).write({'passive_rate': 2.0})
+        self.assertEqual(draft.passive_rate, 1.5)

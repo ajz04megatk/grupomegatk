@@ -306,12 +306,13 @@ class TestLenkaAccounting(TransactionCase):
         from odoo import fields
         investment._generate_interest_until(fields.Date.to_date('2025-03-15'), 12.0)
         original = investment.interest_line_ids
-        disbursement = self._disbursement_with_draft_move()
-        original[0].move_id = disbursement.move_id
+        self._configure_investment_accounting()
+        original[0].action_create_account_move()
+        original_move = original[0].move_id
         with self.assertRaises(ValidationError):
             investment.action_recalculate_early_withdrawal(fields.Date.to_date('2025-03-15'))
         self.assertEqual(investment.interest_line_ids, original)
-        self.assertEqual(original[0].move_id, disbursement.move_id)
+        self.assertEqual(original[0].move_id, original_move)
 
     def test_applied_disbursement_cannot_be_edited_or_deleted(self):
         disbursement = self._disbursement_with_draft_move()
@@ -381,3 +382,102 @@ class TestLenkaAccounting(TransactionCase):
         self.assertEqual(draft.amount, 2000.0)
         draft.unlink()
         self.assertFalse(draft.exists())
+
+    def _configure_investment_accounting(self):
+        accounts = self.env['account.account'].create([
+            {'name': 'Liquidez inversiones prueba', 'code': 'LNI901', 'account_type': 'asset_current', 'company_ids': [(6, 0, self.company.ids)]},
+            {'name': 'Obligacion inversiones prueba', 'code': 'LNI902', 'account_type': 'liability_current', 'company_ids': [(6, 0, self.company.ids)]},
+            {'name': 'Intereses inversiones prueba', 'code': 'LNI903', 'account_type': 'expense', 'company_ids': [(6, 0, self.company.ids)]},
+            {'name': 'Retenciones inversiones prueba', 'code': 'LNI904', 'account_type': 'liability_current', 'company_ids': [(6, 0, self.company.ids)]},
+        ])
+        journal = self.env['account.journal'].create({
+            'name': 'Inversiones prueba historial', 'code': 'LNIH', 'type': 'general',
+            'company_id': self.company.id, 'default_account_id': accounts[0].id,
+        })
+        self.company.write({
+            'lenka_investment_journal_id': journal.id,
+            'lenka_investor_liability_account_id': accounts[1].id,
+            'lenka_passive_interest_expense_account_id': accounts[2].id,
+            'lenka_passive_interest_tax_payable_account_id': accounts[3].id,
+        })
+
+    def _investment_accounting_history(self):
+        from odoo import fields
+        self._configure_investment_accounting()
+        investment = self.env['lenka.investment'].create({
+            'partner_id': self.partner.id, 'principal_amount': 10000.0,
+            'passive_rate': 1.0, 'early_withdrawal_rate': .5, 'rate_period': 'monthly',
+            'start_date': '2025-01-15', 'maturity_date': '2025-02-15',
+        })
+        investment.action_activate()
+        investment.action_create_receipt_move()
+        investment._generate_interest_until(fields.Date.to_date('2025-02-15'), 1.0)
+        interest = investment.interest_line_ids
+        interest.action_create_account_move()
+        withdrawal = self.env['lenka.investment.withdrawal'].create({
+            'investment_id': investment.id, 'date': '2025-02-15', 'principal_amount': 2000.0,
+        })
+        withdrawal.action_post()
+        withdrawal.action_create_account_move()
+        return investment, interest, withdrawal
+
+    def test_investment_accounting_links_cannot_be_detached(self):
+        investment, interest, withdrawal = self._investment_accounting_history()
+        for record, field in ((investment, 'receipt_move_id'), (interest, 'move_id'), (withdrawal, 'move_id')):
+            original = record[field]
+            with self.assertRaises(ValidationError):
+                record.write({field: False})
+            self.assertEqual(record[field], original)
+        for record in (interest, withdrawal):
+            with self.assertRaises(ValidationError):
+                record.adjustment_move_id = investment.receipt_move_id
+
+    def test_investment_accounting_links_cannot_be_injected_on_create(self):
+        investment, interest, withdrawal = self._investment_accounting_history()
+        with self.assertRaises(ValidationError):
+            investment.copy({'receipt_move_id': investment.receipt_move_id.id})
+        with self.assertRaises(ValidationError):
+            interest.copy({'move_id': interest.move_id.id})
+        with self.assertRaises(ValidationError):
+            withdrawal.copy({'move_id': withdrawal.move_id.id})
+
+    def test_investment_accounting_generation_is_idempotent(self):
+        investment, interest, withdrawal = self._investment_accounting_history()
+        originals = (investment.receipt_move_id, interest.move_id, withdrawal.move_id)
+        investment.action_create_receipt_move()
+        interest.action_create_account_move()
+        withdrawal.action_create_account_move()
+        self.assertEqual(originals, (investment.receipt_move_id, interest.move_id, withdrawal.move_id))
+        for move in originals:
+            self.assertEqual(move.state, 'draft')
+            self.assertAlmostEqual(sum(move.line_ids.mapped('debit')), sum(move.line_ids.mapped('credit')))
+
+    def test_accounted_interest_cannot_be_edited_or_removed(self):
+        investment, interest, _ = self._investment_accounting_history()
+        for vals in ({'amount': 200.0}, {'tax_rate': 20.0}, {'period_date': '2025-03-15'}, {'state': 'draft'}):
+            with self.assertRaises(ValidationError):
+                interest.write(vals)
+        with self.assertRaises(ValidationError):
+            interest.unlink()
+        self.assertAlmostEqual(investment.paid_interest, 100.0)
+
+    def test_investment_with_receipt_cannot_change_financial_terms(self):
+        investment, _, _ = self._investment_accounting_history()
+        for vals in ({'principal_amount': 20000.0}, {'passive_rate': 3.0}, {'rate_period': 'annual'},
+                     {'maturity_date': '2025-01-20'}, {'early_withdrawal_rate': 1.0}):
+            with self.assertRaises(ValidationError):
+                investment.write(vals)
+        with self.assertRaises(ValidationError):
+            investment.unlink()
+        investment.notes = 'Observacion permitida para seguimiento'
+        self.assertTrue(investment.notes)
+
+    def test_copy_of_used_investment_is_new_draft_without_history(self):
+        investment, _, _ = self._investment_accounting_history()
+        duplicate = investment.copy()
+        self.assertEqual(duplicate.state, 'draft')
+        self.assertFalse(duplicate.receipt_move_id)
+        self.assertFalse(duplicate.interest_line_ids)
+        self.assertFalse(duplicate.withdrawal_ids)
+        duplicate.principal_amount = 15000.0
+        self.assertAlmostEqual(duplicate.outstanding_principal, 15000.0)
