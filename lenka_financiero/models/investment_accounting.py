@@ -223,7 +223,9 @@ class LenkaInvestmentWithdrawalAccounting(models.Model):
                     lambda l: l.period_date <= rec.date and l.move_id
                 ).mapped('amount')
             )
-            recalculated_interest = rec.accrued_interest_amount
+            # Compare gross with gross: withholding is a separate liability,
+            # not an additional reduction of the contractual interest expense.
+            recalculated_interest = rec.gross_interest_amount
             difference = contractual_interest - recalculated_interest
             if difference <= 0:
                 continue

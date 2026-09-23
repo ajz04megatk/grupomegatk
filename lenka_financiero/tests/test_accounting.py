@@ -481,3 +481,33 @@ class TestLenkaAccounting(TransactionCase):
         self.assertFalse(duplicate.withdrawal_ids)
         duplicate.principal_amount = 15000.0
         self.assertAlmostEqual(duplicate.outstanding_principal, 15000.0)
+
+    def test_early_settlement_accounting_does_not_reverse_withholding(self):
+        self._configure_investment_accounting()
+        self.env['ir.config_parameter'].sudo().set_param('lenka_financiero.passive_interest_tax_rate', '10')
+        investment = self.env['lenka.investment'].create({
+            'partner_id': self.partner.id, 'principal_amount': 100000.0,
+            'passive_rate': 1.5, 'early_withdrawal_rate': 1.0,
+            'rate_period': 'monthly', 'start_date': '2025-01-15',
+            'maturity_date': '2026-01-15',
+        })
+        investment.action_activate()
+        investment.action_create_receipt_move()
+        withdrawal = self.env['lenka.investment.withdrawal'].create({
+            'investment_id': investment.id, 'date': '2025-01-25',
+            'principal_amount': 100000.0,
+        })
+        withdrawal.action_post()
+        investment.interest_line_ids.action_create_account_move()
+        withdrawal.action_create_account_move()
+        withdrawal.action_create_account_move()
+        self.assertFalse(withdrawal.adjustment_move_id)
+        moves = investment.receipt_move_id | investment.interest_line_ids.move_id | withdrawal.move_id
+        self.assertEqual(len(moves), 3)
+        lines = moves.line_ids
+        liability = lines.filtered(lambda l: l.account_id == self.company.lenka_investor_liability_account_id)
+        tax = lines.filtered(lambda l: l.account_id == self.company.lenka_passive_interest_tax_payable_account_id)
+        expense = lines.filtered(lambda l: l.account_id == self.company.lenka_passive_interest_expense_account_id)
+        self.assertAlmostEqual(sum(liability.mapped('balance')), 0.0, places=2)
+        self.assertAlmostEqual(sum(tax.mapped('balance')), -33.33, places=2)
+        self.assertAlmostEqual(sum(expense.mapped('balance')), 333.33, places=2)
