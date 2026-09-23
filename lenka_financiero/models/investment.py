@@ -43,6 +43,14 @@ class LenkaInvestment(models.Model):
     withdrawn_principal = fields.Monetary(string='Capital retirado', compute='_compute_totals')
     outstanding_principal = fields.Monetary(string='Capital vigente', compute='_compute_totals')
     notes = fields.Text(string='Observaciones')
+    terms_locked = fields.Boolean(compute='_compute_terms_locked')
+
+    @api.depends('receipt_move_id', 'interest_line_ids.state', 'withdrawal_ids.state')
+    def _compute_terms_locked(self):
+        for rec in self:
+            rec.terms_locked = bool(rec.receipt_move_id or
+                                    rec.interest_line_ids.filtered(lambda l: l.state in ('accrued', 'paid')) or
+                                    rec.withdrawal_ids.filtered(lambda w: w.state == 'posted'))
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -57,8 +65,7 @@ class LenkaInvestment(models.Model):
                  'rate_period', 'start_date', 'maturity_date', 'term_months', 'capitalization'}
         if terms.intersection(vals):
             for rec in self:
-                if (rec.receipt_move_id or rec.interest_line_ids.filtered(lambda l: l.state in ('accrued', 'paid'))
-                        or rec.withdrawal_ids.filtered(lambda w: w.state == 'posted')):
+                if rec.terms_locked:
                     raise ValidationError(_('No puede cambiar las condiciones de una inversion con movimientos registrados. Conserve su historial y formalice una nueva operacion.'))
         return super().write(vals)
 
@@ -251,6 +258,12 @@ class LenkaInvestmentInterest(models.Model):
     net_amount = fields.Monetary(string='Interes neto', compute='_compute_tax', store=True)
     state = fields.Selection([('draft', 'Borrador'), ('accrued', 'Devengado'), ('paid', 'Pagado'), ('cancelled', 'Anulado')], default='draft')
     payment_reference = fields.Char(string='Referencia de pago')
+    financial_locked = fields.Boolean(compute='_compute_financial_locked')
+
+    @api.depends('state', 'move_id', 'adjustment_move_id')
+    def _compute_financial_locked(self):
+        for rec in self:
+            rec.financial_locked = bool(rec.state == 'paid' or rec.move_id or rec.adjustment_move_id)
 
     def write(self, vals):
         financial = {'investment_id', 'period_date', 'period_start_date', 'calculation_days',

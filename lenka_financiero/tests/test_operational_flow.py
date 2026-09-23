@@ -163,3 +163,55 @@ class TestLenkaOperationalFlow(TransactionCase):
             quote.schedule_line_ids[0].write({'capital': 1.0})
         with self.assertRaises(AccessError):
             quote.schedule_line_ids.unlink()
+
+    def test_operator_partial_withdrawal_through_final_settlement(self):
+        # Synthetic withholding configuration, not a statutory tax assumption.
+        self.env['ir.config_parameter'].sudo().set_param('lenka_financiero.passive_interest_tax_rate', '10')
+        investment = self.env['lenka.investment'].with_user(self.operator).create({
+            'partner_id': self.client.id, 'principal_amount': 100000.0,
+            'investment_type': 'fixed', 'passive_rate': 1.5,
+            'early_withdrawal_rate': 1.0, 'rate_period': 'monthly',
+            'start_date': '2025-01-15', 'maturity_date': '2026-01-15',
+        })
+        self.assertFalse(investment.terms_locked)
+        investment.action_activate()
+        withdrawals = self.env['lenka.investment.withdrawal'].with_user(self.operator)
+        first = withdrawals.create({
+            'investment_id': investment.id, 'date': '2025-01-25',
+            'principal_amount': 20000.0,
+        })
+        first.action_post()
+        self.assertAlmostEqual(first.total_amount, 20300.0, places=2)
+        self.assertAlmostEqual(investment.outstanding_principal, 80000.0)
+        self.assertAlmostEqual(investment.current_rate, 1.0)
+        self.assertTrue(investment.terms_locked)
+        self.assertEqual(investment.state, 'active')
+        final = withdrawals.create({
+            'investment_id': investment.id, 'date': '2025-02-15',
+            'principal_amount': 80000.0,
+        })
+        final.action_post()
+        final.action_post()  # Repeated clicks must not pay twice.
+        self.assertAlmostEqual(final.gross_interest_amount, 560.0, places=2)
+        self.assertAlmostEqual(final.total_amount, 80504.0, places=2)
+        self.assertEqual(investment.state, 'closed')
+        self.assertAlmostEqual(investment.outstanding_principal, 0.0)
+        self.assertEqual(len(investment.interest_line_ids), 2)
+        self.assertTrue(all(investment.interest_line_ids.mapped('financial_locked')))
+        with self.assertRaises(ValidationError):
+            investment.write({'passive_rate': 2.0})
+        with self.assertRaises(ValidationError):
+            investment.interest_line_ids.write({'amount': 1.0})
+        statement = self.env['lenka.statement'].with_user(self.operator).create({
+            'statement_type': 'investment', 'partner_id': self.client.id,
+            'investment_id': investment.id, 'company_id': self.company.id,
+            'currency_id': investment.currency_id.id,
+            'date_from': '2025-01-15', 'date_to': '2025-02-15',
+        })
+        statement.action_generate()
+        statement.action_generate()
+        self.assertEqual(len(statement.line_ids), 6)
+        self.assertAlmostEqual(statement.closing_balance, 0.0, places=2)
+        report = self.env.ref('lenka_financiero.action_report_lenka_statement').with_user(self.operator)
+        html, _ = report._render_qweb_html(report.report_name, docids=statement.ids)
+        self.assertIn(self.client.name, html.decode())
