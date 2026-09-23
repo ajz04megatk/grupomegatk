@@ -446,6 +446,10 @@ class TestLenkaRestructuring(TransactionCase):
         self.assertFalse(successor.disbursement_ids)
         self.assertFalse(original.payment_ids)
         self.assertTrue(request.completed_date)
+        self.assertAlmostEqual(request.pending_capital, 0.0)
+        self.assertAlmostEqual(request.pending_interest, 0.0)
+        self.assertAlmostEqual(request.pending_late_fees, 0.0)
+        self.assertAlmostEqual(request.approved_interest, 3000.0)
         with self.assertRaises(ValidationError):
             original.state = 'active'
         with self.assertRaises(ValidationError):

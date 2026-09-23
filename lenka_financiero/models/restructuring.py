@@ -133,6 +133,8 @@ class LenkaRestructuring(models.Model):
 
     def _settlement_components(self):
         self.ensure_one()
+        if self.original_operation_closed:
+            return 0.0, 0.0, 0.0
         today = fields.Date.context_today(self)
         operation = self.operation_id
         interest = sum(max(line.interest - line.interest_paid, 0.0)
@@ -141,7 +143,7 @@ class LenkaRestructuring(models.Model):
         rounding = self.currency_id.round
         return tuple(rounding(value) for value in (operation.outstanding_capital, interest, late))
 
-    @api.depends('settlement_method', 'operation_id.outstanding_capital',
+    @api.depends('settlement_method', 'original_operation_closed', 'operation_id.outstanding_capital',
                  'operation_id.schedule_line_ids.date', 'operation_id.schedule_line_ids.interest',
                  'operation_id.schedule_line_ids.interest_paid', 'operation_id.schedule_line_ids.late_fee_due',
                  'operation_id.schedule_line_ids.late_fee_paid')
