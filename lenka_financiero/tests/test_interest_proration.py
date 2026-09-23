@@ -147,7 +147,9 @@ class TestLenkaInterestProration(TransactionCase):
         self.env['ir.config_parameter'].sudo().set_param('lenka_financiero.passive_interest_tax_rate', '10')
         investment = self._investment()
         withdrawal = self._withdraw(investment, '2025-01-25', 100000.0)
-        self.assertAlmostEqual(withdrawal.interest_tax_amount, withdrawal.gross_interest_amount * .1)
+        self.assertAlmostEqual(withdrawal.interest_tax_amount, 33.33, places=2)
+        self.assertAlmostEqual(withdrawal.accrued_interest_amount, 300.0, places=2)
+        self.assertAlmostEqual(withdrawal.total_amount, 100300.0, places=2)
         statement = self.env['lenka.statement'].create({
             'statement_type': 'investment', 'investment_id': investment.id,
             'partner_id': self.partner.id, 'company_id': investment.company_id.id,
