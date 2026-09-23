@@ -284,7 +284,20 @@ class LenkaStatement(models.Model):
             if auto_send and statement.partner_id.email:
                 statement.action_send_email()
 
-        active_investments = self.env['lenka.investment'].search([('state', 'in', ('active', 'matured')), ('company_id', 'in', self.env.companies.ids)])
+        # Include the final month of closed investments, but never generate
+        # a balance for an investment whose deposit has not started yet.
+        final_withdrawals = self.env['lenka.investment.withdrawal'].search([
+            ('state', '=', 'posted'), ('date', '>=', first_prev_month),
+            ('date', '<=', last_prev_month),
+            ('investment_id.company_id', 'in', self.env.companies.ids),
+            ('investment_id.state', '=', 'closed'),
+        ])
+        active_investments = self.env['lenka.investment'].search([
+            ('company_id', 'in', self.env.companies.ids),
+            ('start_date', '<=', last_prev_month),
+            '|', ('state', 'in', ('active', 'matured')),
+            ('id', 'in', final_withdrawals.mapped('investment_id').ids),
+        ])
         for investment in active_investments:
             existing = self.search_count([
                 ('investment_id', '=', investment.id),

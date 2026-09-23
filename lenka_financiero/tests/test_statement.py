@@ -235,3 +235,40 @@ class TestLenkaStatement(TransactionCase):
         self.assertCountEqual(amounts, [('1000000', '000'), ('100000', '000'), ('000', '10000'), ('000', '1090000')])
         self.assertAlmostEqual(statement.opening_balance + sum(statement.line_ids.mapped('credit'))
                                - sum(statement.line_ids.mapped('debit')), statement.closing_balance)
+
+    def test_monthly_generation_includes_final_closed_investment_once(self):
+        from unittest.mock import patch
+        statement, _ = self._taxed_investment_statement(withdraw=True)
+        investment = statement.investment_id
+        self.assertEqual(investment.state, 'closed')
+        self.env['ir.config_parameter'].sudo().set_param('lenka_financiero.auto_send_statements', 'False')
+        model = self.env['lenka.statement']
+        with patch('odoo.addons.lenka_financiero.models.statement.fields.Date.context_today',
+                   return_value=fields.Date.to_date('2025-03-01')):
+            model._cron_generate_monthly_statements()
+            model._cron_generate_monthly_statements()
+        monthly = model.search([('investment_id', '=', investment.id), ('date_from', '=', '2025-02-01')])
+        self.assertEqual(len(monthly), 1)
+        self.assertEqual(monthly.state, 'generated')
+        self.assertFalse(monthly.sent_date)
+        self.assertAlmostEqual(monthly.opening_balance, 10000.0)
+        self.assertAlmostEqual(monthly.closing_balance, 0.0)
+        self.assertEqual(len(monthly.line_ids), 3)
+        with patch('odoo.addons.lenka_financiero.models.statement.fields.Date.context_today',
+                   return_value=fields.Date.to_date('2025-04-01')):
+            model._cron_generate_monthly_statements()
+        self.assertFalse(model.search([('investment_id', '=', investment.id), ('date_from', '=', '2025-03-01')]))
+
+    def test_monthly_generation_skips_investments_not_started_in_period(self):
+        from unittest.mock import patch
+        investment = self.env['lenka.investment'].create({
+            'partner_id': self.partner.id, 'principal_amount': 10000.0,
+            'passive_rate': 1.0, 'start_date': '2025-03-15',
+            'maturity_date': '2026-03-15',
+        })
+        investment.action_activate()
+        self.env['ir.config_parameter'].sudo().set_param('lenka_financiero.auto_send_statements', 'False')
+        with patch('odoo.addons.lenka_financiero.models.statement.fields.Date.context_today',
+                   return_value=fields.Date.to_date('2025-03-01')):
+            self.env['lenka.statement']._cron_generate_monthly_statements()
+        self.assertFalse(self.env['lenka.statement'].search([('investment_id', '=', investment.id)]))
