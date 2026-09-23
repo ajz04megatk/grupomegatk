@@ -190,6 +190,66 @@ class TestLenkaPayment(TransactionCase):
             else:
                 parameter.set_param('lenka_financiero.card_fee_rate', old_value)
 
+    def test_due_payment_after_extra_capital_cannot_collect_capital_twice(self):
+        today = fields.Date.context_today(self.env.user)
+        operation = self._operation(first_payment_date=fields.Date.add(today, months=1))
+        advance = self.env['lenka.payment'].create({
+            'operation_id': operation.id,
+            'payment_date': today,
+            'amount': 99000.0,
+            'payment_method': 'transfer',
+        })
+        advance.action_post()
+        self.assertAlmostEqual(operation.outstanding_capital, 1000.0, places=2)
+
+        first = operation.schedule_line_ids.sorted('sequence')[0]
+        collection = self.env['lenka.payment'].create({
+            'operation_id': operation.id,
+            'payment_date': first.date,
+            'amount': first.interest + 5000.0,
+            'payment_method': 'cash',
+        })
+        collection.action_post()
+        self.assertAlmostEqual(collection.capital_amount, 1000.0, places=2)
+        self.assertAlmostEqual(collection.extra_capital_amount, 0.0, places=2)
+        self.assertAlmostEqual(collection.unapplied_amount, 4000.0, places=2)
+        self.assertAlmostEqual(operation.paid_capital, operation.financed_amount, places=2)
+        self.assertAlmostEqual(operation.outstanding_capital, 0.0, places=2)
+        self.assertAlmostEqual(
+            collection.capital_amount + collection.interest_amount
+            + collection.late_fee_amount + collection.unapplied_amount,
+            collection.net_bank_amount, places=2,
+        )
+
+        collection.action_cancel()
+        self.assertAlmostEqual(operation.outstanding_capital, 1000.0, places=2)
+        self.assertAlmostEqual(first.capital_paid, 0.0, places=2)
+        advance.action_cancel()
+        self.assertAlmostEqual(operation.outstanding_capital, operation.financed_amount, places=2)
+
+    def test_fully_prepaid_capital_is_not_collected_at_maturity(self):
+        today = fields.Date.context_today(self.env.user)
+        operation = self._operation(first_payment_date=fields.Date.add(today, months=1))
+        advance = self.env['lenka.payment'].create({
+            'operation_id': operation.id,
+            'payment_date': today,
+            'amount': operation.financed_amount,
+            'payment_method': 'transfer',
+        })
+        advance.action_post()
+        last = operation.schedule_line_ids.sorted('sequence')[-1]
+        interest = sum(operation.schedule_line_ids.mapped('interest'))
+        collection = self.env['lenka.payment'].create({
+            'operation_id': operation.id,
+            'payment_date': last.date,
+            'amount': interest + 5000.0,
+            'payment_method': 'transfer',
+        })
+        collection.action_post()
+        self.assertAlmostEqual(collection.capital_amount, 0.0, places=2)
+        self.assertAlmostEqual(collection.unapplied_amount, 5000.0, places=2)
+        self.assertAlmostEqual(operation.paid_capital, operation.financed_amount, places=2)
+
     def test_multiple_due_installments_are_paid_oldest_first(self):
         today = fields.Date.context_today(self.env.user)
         operation = self._operation(first_payment_date=fields.Date.add(today, months=-2))

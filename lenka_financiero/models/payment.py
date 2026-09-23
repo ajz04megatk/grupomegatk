@@ -118,14 +118,19 @@ class LenkaPayment(models.Model):
                 }))
 
             # 3) Capital exigible de cuotas vencidas/a la fecha.
+            # Los abonos extraordinarios anteriores reducen el saldo global,
+            # aunque no se distribuyan entre las cuotas de la tabla original.
+            # Nunca aplicar nuevamente ese capital al vencer dichas cuotas.
+            capital_available = rec.operation_id.outstanding_capital
             for line in due_lines:
-                if remaining <= 0:
+                if remaining <= 0 or capital_available <= 0:
                     break
                 due_capital = max(line.capital - line.capital_paid, 0.0)
                 if due_capital <= 0:
                     continue
-                pay_capital = min(remaining, due_capital)
+                pay_capital = min(remaining, due_capital, capital_available)
                 remaining -= pay_capital
+                capital_available -= pay_capital
                 line.capital_paid += pay_capital
                 capital_total += pay_capital
                 allocations.append((0, 0, {
@@ -135,11 +140,7 @@ class LenkaPayment(models.Model):
 
             # 4) Si paga mas, todo excedente se aplica directamente a capital.
             # No se anticipan intereses de cuotas futuras.
-            # paid_capital ya refleja en este punto el capital aplicado a las cuotas
-            # anteriores y el capital que acabamos de actualizar en due_lines. No se
-            # debe restar capital_total una segunda vez.
-            outstanding_after_due = max(rec.operation_id.financed_amount - rec.operation_id.paid_capital, 0.0)
-            extra_capital = min(remaining, outstanding_after_due)
+            extra_capital = min(remaining, capital_available)
             remaining -= extra_capital
             if extra_capital:
                 capital_total += extra_capital
@@ -199,6 +200,7 @@ class LenkaFinancialOperationPaymentMixin(models.Model):
     outstanding_capital = fields.Monetary(string='Capital pendiente', compute='_compute_collection_totals')
 
     @api.depends(
+        'financed_amount',
         'schedule_line_ids.capital_paid', 'schedule_line_ids.interest_paid', 'schedule_line_ids.late_fee_paid',
         'payment_ids.state', 'payment_ids.extra_capital_amount', 'payment_ids.card_fee_amount', 'payment_ids.net_bank_amount'
     )
