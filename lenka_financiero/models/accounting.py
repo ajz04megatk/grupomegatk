@@ -1,4 +1,4 @@
-from odoo import fields, models, _
+from odoo import api, fields, models, _
 from odoo.exceptions import ValidationError
 
 
@@ -105,7 +105,20 @@ class LenkaDisbursementAccounting(models.Model):
 class LenkaPaymentAccounting(models.Model):
     _inherit = 'lenka.payment'
 
-    move_id = fields.Many2one('account.move', string='Partida contable', readonly=True, copy=False)
+    move_id = fields.Many2one('account.move', string='Partida contable', readonly=True, copy=False, ondelete='restrict')
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        for vals in vals_list:
+            if vals.get('move_id'):
+                raise ValidationError(_('La partida del cobro debe generarse mediante Crear borrador contable.'))
+            vals['move_id'] = False
+        return super().create(vals_list)
+
+    def write(self, vals):
+        if 'move_id' in vals and any(rec.move_id.id != vals['move_id'] for rec in self):
+            raise ValidationError(_('No se puede reemplazar ni desvincular la partida contable de un cobro.'))
+        return super().write(vals)
 
     def _prepare_collection_move(self):
         self.ensure_one()
@@ -194,7 +207,7 @@ class LenkaPaymentAccounting(models.Model):
             if rec.move_id:
                 continue
             move = self.env['account.move'].with_company(rec.operation_id.company_id).create(rec._prepare_collection_move())
-            rec.move_id = move.id
+            super(LenkaPaymentAccounting, rec).write({'move_id': move.id})
         return True
 
     def action_open_account_move(self):
@@ -209,3 +222,18 @@ class LenkaPaymentAccounting(models.Model):
             'res_id': self.move_id.id,
             'target': 'current',
         }
+
+
+class AccountMoveLenkaCollection(models.Model):
+    _inherit = 'account.move'
+
+    def _post(self, soft=True):
+        # Solo lectura elevada para aplicar el invariante tambien a contadores
+        # sin permisos sobre Lenka. La publicacion conserva los permisos de Odoo.
+        cancelled_payment = self.env['lenka.payment'].sudo().search([
+            ('move_id', 'in', self.ids),
+            ('state', '=', 'cancelled'),
+        ], limit=1)
+        if cancelled_payment:
+            raise ValidationError(_('No se puede publicar una partida vinculada a un cobro Lenka anulado.'))
+        return super()._post(soft=soft)

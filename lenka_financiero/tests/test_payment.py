@@ -63,6 +63,32 @@ class TestLenkaPayment(TransactionCase):
             + payment.unapplied_amount, 9600.0, places=2,
         )
 
+    def test_closed_operation_blocks_collection_cancellation(self):
+        payment = self._draft_payment()
+        operation = payment.operation_id
+        first = operation.schedule_line_ids.sorted('sequence')[0]
+        payment.amount = operation.financed_amount + first.interest
+        payment.action_post()
+        operation.action_close_paid_operation()
+        with self.assertRaises(ValidationError):
+            payment.action_cancel()
+        self.assertEqual(operation.state, 'done')
+        self.assertEqual(payment.state, 'posted')
+        self.assertAlmostEqual(operation.outstanding_capital, 0.0, places=2)
+
+    def test_cancel_batch_validates_before_changing_any_payment(self):
+        first = self._draft_payment()
+        first.action_post()
+        second = self._draft_payment()
+        second.action_post()
+        second.operation_id.state = 'done'
+        balance = first.operation_id.outstanding_capital
+        with self.assertRaises(ValidationError):
+            (first | second).action_cancel()
+        self.assertEqual(first.state, 'posted')
+        self.assertEqual(second.state, 'posted')
+        self.assertAlmostEqual(first.operation_id.outstanding_capital, balance, places=2)
+
     def test_payment_cannot_skip_actions_via_create_or_write(self):
         payment = self._draft_payment()
         for vals in [{'state': 'posted'}, {'capital_amount': 5000.0}, {'extra_capital_amount': 5000.0}]:

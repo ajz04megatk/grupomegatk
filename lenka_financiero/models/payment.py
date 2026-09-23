@@ -185,9 +185,19 @@ class LenkaPayment(models.Model):
         return True
 
     def action_cancel(self):
+        # Validar todo el lote antes de modificar cuotas o partidas.
         for rec in self:
+            if rec.state == 'cancelled':
+                continue
+            if rec.state == 'posted' and rec.operation_id.state != 'active':
+                raise ValidationError(_('No se puede anular un cobro de una operacion cerrada o inactiva. Revise primero el cierre de la operacion y sus garantias.'))
             if rec.move_id and rec.move_id.state == 'posted':
-                raise ValidationError(_('No se puede anular el cobro mientras su asiento contable este publicado. Debe revertirse primero en Contabilidad.'))
+                raise ValidationError(_('No se puede anular el cobro mientras su partida este publicada. Regularice su anulacion en Contabilidad antes de continuar.'))
+        for rec in self:
+            if rec.state == 'cancelled':
+                continue
+            if rec.move_id.state == 'draft':
+                rec.move_id.button_cancel()
             if rec.state != 'posted':
                 super(LenkaPayment, rec).write({'state': 'cancelled'})
                 continue

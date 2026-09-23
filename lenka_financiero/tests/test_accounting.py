@@ -54,26 +54,101 @@ class TestLenkaAccounting(TransactionCase):
             payment.action_create_account_move()
 
     def test_existing_move_prevents_duplicate_creation(self):
+        self._configure_accounting()
         self.operation.state = 'active'
-        move = self.env['account.move'].create({
-            'move_type': 'entry',
-            'date': self.operation.date,
-            'journal_id': self.env['account.journal'].search([
-                ('company_id', '=', self.company.id),
-                ('type', '=', 'general'),
-            ], limit=1).id,
-            'line_ids': [],
-        })
         payment = self.env['lenka.payment'].create({
             'operation_id': self.operation.id,
             'amount': 500.0,
             'payment_method': 'transfer',
-            'move_id': move.id,
         })
         payment.action_post()
+        payment.action_create_account_move()
         before = payment.move_id
         payment.action_create_account_move()
         self.assertEqual(payment.move_id, before)
+
+    def _collection_with_draft_move(self):
+        accounts = self.env['account.account'].create([
+            {'name': 'Liquidez prueba Lenka', 'code': 'LNK9001', 'account_type': 'asset_current', 'company_ids': [(6, 0, [self.company.id])]},
+            {'name': 'Cartera prueba Lenka', 'code': 'LNK9002', 'account_type': 'asset_current', 'company_ids': [(6, 0, [self.company.id])]},
+            {'name': 'Intereses prueba Lenka', 'code': 'LNK9003', 'account_type': 'income', 'company_ids': [(6, 0, [self.company.id])]},
+        ])
+        journal = self.env['account.journal'].create({
+            'name': 'Cobros prueba Lenka', 'code': 'LNKR', 'type': 'general',
+            'company_id': self.company.id, 'default_account_id': accounts[0].id,
+        })
+        self.company.write({
+            'lenka_collection_journal_id': journal.id,
+            'lenka_portfolio_account_id': accounts[1].id,
+            'lenka_interest_income_account_id': accounts[2].id,
+            'lenka_late_fee_income_account_id': accounts[2].id,
+        })
+        self.operation.state = 'active'
+        first = self.operation.schedule_line_ids.sorted('sequence')[0]
+        payment = self.env['lenka.payment'].create({
+            'operation_id': self.operation.id, 'payment_date': first.date,
+            'amount': first.interest + 2000.0, 'payment_method': 'transfer',
+        })
+        payment.action_post()
+        payment.action_create_account_move()
+        return payment
+
+    def test_cancel_collection_cancels_draft_move_and_restores_balance(self):
+        payment = self._collection_with_draft_move()
+        move = payment.move_id
+        self.assertEqual(move.state, 'draft')
+        payment.action_cancel()
+        self.assertEqual(payment.state, 'cancelled')
+        self.assertEqual(move.state, 'cancel')
+        self.assertEqual(payment.move_id, move)
+        self.assertAlmostEqual(self.operation.outstanding_capital, self.operation.financed_amount, places=2)
+        payment.action_cancel()
+        self.assertEqual(move.state, 'cancel')
+
+    def test_cancelled_collection_move_cannot_be_reposted(self):
+        payment = self._collection_with_draft_move()
+        payment.action_cancel()
+        payment.move_id.button_draft()
+        with self.assertRaises(ValidationError):
+            payment.move_id.action_post()
+        self.assertEqual(payment.move_id.state, 'draft')
+        self.assertEqual(payment.state, 'cancelled')
+
+    def test_published_move_blocks_collection_cancellation(self):
+        payment = self._collection_with_draft_move()
+        payment.move_id.action_post()
+        balance = self.operation.outstanding_capital
+        with self.assertRaises(ValidationError):
+            payment.action_cancel()
+        self.assertEqual(payment.state, 'posted')
+        self.assertEqual(payment.move_id.state, 'posted')
+        self.assertAlmostEqual(self.operation.outstanding_capital, balance, places=2)
+
+    def test_collection_move_link_cannot_be_changed(self):
+        payment = self._collection_with_draft_move()
+        replacement = payment.move_id.copy()
+        for move_id in [False, replacement.id]:
+            with self.subTest(move_id=move_id), self.assertRaises(ValidationError):
+                payment.write({'move_id': move_id})
+        with self.assertRaises(ValidationError):
+            self.env['lenka.payment'].create({
+                'operation_id': self.operation.id, 'amount': 100.0,
+                'move_id': replacement.id,
+            })
+
+    def test_duplicate_collection_does_not_copy_account_move(self):
+        payment = self._collection_with_draft_move()
+        duplicate = payment.copy()
+        self.assertEqual(duplicate.state, 'draft')
+        self.assertFalse(duplicate.move_id)
+        self.assertFalse(duplicate.allocation_line_ids)
+
+    def test_unrelated_account_move_can_still_be_published(self):
+        payment = self._collection_with_draft_move()
+        unrelated = payment.move_id.copy()
+        payment.action_cancel()
+        unrelated.action_post()
+        self.assertEqual(unrelated.state, 'posted')
 
 
     def _configure_accounting(self):
