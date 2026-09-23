@@ -47,10 +47,10 @@
                     </group>
                     <group string="Resumen">
                         <field name="opening_balance" readonly="1"/>
-                        <field name="period_capital" readonly="1"/>
+                        <field name="period_capital" readonly="1" invisible="statement_type != 'operation'"/>
                         <field name="period_interest" readonly="1"/>
-                        <field name="period_late_fees" readonly="1"/>
-                        <field name="period_fees" readonly="1"/>
+                        <field name="period_late_fees" readonly="1" invisible="statement_type != 'operation'"/>
+                        <field name="period_fees" readonly="1" invisible="statement_type != 'operation'"/>
                         <field name="closing_balance" readonly="1"/>
                     </group>
                     <field name="line_ids" readonly="1">
@@ -60,10 +60,10 @@
                             <field name="reference"/>
                             <field name="debit"/>
                             <field name="credit"/>
-                            <field name="capital"/>
-                            <field name="interest"/>
-                            <field name="late_fee"/>
-                            <field name="fee"/>
+                            <field name="capital" column_invisible="parent.statement_type != 'operation'"/>
+                            <field name="interest" column_invisible="parent.statement_type != 'operation'"/>
+                            <field name="late_fee" column_invisible="parent.statement_type != 'operation'"/>
+                            <field name="fee" column_invisible="parent.statement_type != 'operation'"/>
                         </list>
                     </field>
                 </sheet>

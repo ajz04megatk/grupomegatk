@@ -162,10 +162,20 @@ class LenkaStatement(models.Model):
         withdrawals_before = investment.withdrawal_ids.filtered(
             lambda w: w.state == 'posted' and w.date < self.date_from
         )
-        opening = investment.principal_amount + sum(interest_before.mapped('net_amount')) - sum(withdrawals_before.mapped('total_amount'))
+        principal_before = investment.principal_amount if investment.start_date < self.date_from else 0.0
+        opening = principal_before + sum(interest_before.mapped('net_amount')) - sum(withdrawals_before.mapped('total_amount'))
         self.opening_balance = max(opening, 0.0)
 
         lines = []
+        deposit = investment.principal_amount if self.date_from <= investment.start_date <= self.date_to else 0.0
+        if deposit:
+            lines.append((0, 0, {
+                'date': investment.start_date,
+                'description': _('Deposito inicial de inversion'),
+                'reference': investment.contract_reference,
+                'credit': deposit,
+                'capital': deposit,
+            }))
         interest_total = 0.0
         tax_total = 0.0
         withdrawal_total = 0.0
@@ -204,7 +214,7 @@ class LenkaStatement(models.Model):
         self.period_capital = 0.0
         self.period_late_fees = 0.0
         self.period_fees = 0.0
-        self.closing_balance = max(self.opening_balance + interest_total - tax_total - withdrawal_total, 0.0)
+        self.closing_balance = max(self.opening_balance + deposit + interest_total - tax_total - withdrawal_total, 0.0)
         self._replace_generated_lines(sorted(lines, key=lambda cmd: cmd[2].get('date') or self.date_from))
 
     def action_send_email(self):

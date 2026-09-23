@@ -158,7 +158,7 @@ class TestLenkaInterestProration(TransactionCase):
         })
         statement.action_generate()
         self.assertAlmostEqual(statement.closing_balance, 0.0, places=2)
-        self.assertEqual(len(statement.line_ids), 3)
+        self.assertEqual(len(statement.line_ids), 4)
 
     def test_paid_fraction_is_preserved_when_later_periods_are_generated(self):
         investment = self._investment()

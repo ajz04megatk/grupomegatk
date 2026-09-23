@@ -119,7 +119,7 @@ class TestLenkaOperationalFlow(TransactionCase):
         })
         statement.action_generate()
         statement.action_generate()
-        self.assertEqual(len(statement.line_ids), 1)
+        self.assertEqual(len(statement.line_ids), 2)
         self.assertAlmostEqual(statement.period_interest, 100.0, places=2)
         self.assertAlmostEqual(statement.closing_balance, 10100.0, places=2)
 
@@ -210,7 +210,7 @@ class TestLenkaOperationalFlow(TransactionCase):
         })
         statement.action_generate()
         statement.action_generate()
-        self.assertEqual(len(statement.line_ids), 6)
+        self.assertEqual(len(statement.line_ids), 7)
         self.assertAlmostEqual(statement.closing_balance, 0.0, places=2)
         report = self.env.ref('lenka_financiero.action_report_lenka_statement').with_user(self.operator)
         html, _ = report._render_qweb_html(report.report_name, docids=statement.ids)

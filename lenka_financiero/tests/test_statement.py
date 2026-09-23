@@ -170,11 +170,11 @@ class TestLenkaStatement(TransactionCase):
         statement, interest = self._taxed_investment_statement()
         self.assertAlmostEqual(statement.closing_balance, 10900.0)
         self.assertAlmostEqual(statement.period_interest, 1000.0)
-        self.assertEqual(len(statement.line_ids), 2)
+        self.assertEqual(len(statement.line_ids), 3)
         self.assertAlmostEqual(sum(statement.line_ids.mapped('debit')), 100.0)
-        self.assertAlmostEqual(sum(statement.line_ids.mapped('credit')), interest.amount)
+        self.assertAlmostEqual(sum(statement.line_ids.mapped('credit')), 10000.0 + interest.amount)
         statement.action_generate()
-        self.assertEqual(len(statement.line_ids), 2)
+        self.assertEqual(len(statement.line_ids), 3)
         self.assertAlmostEqual(statement.closing_balance, 10900.0)
 
     def test_fully_withdrawn_investment_has_no_residual_tax_balance(self):
@@ -195,3 +195,43 @@ class TestLenkaStatement(TransactionCase):
         self.assertAlmostEqual(statement.opening_balance, 0.0)
         self.assertAlmostEqual(statement.closing_balance, 0.0)
         self.assertFalse(statement.line_ids)
+
+    def test_investment_statement_before_deposit_has_no_balance(self):
+        statement, _ = self._taxed_investment_statement(date_from='2024-12-01', date_to='2024-12-31')
+        self.assertAlmostEqual(statement.opening_balance, 0.0)
+        self.assertAlmostEqual(statement.closing_balance, 0.0)
+        self.assertFalse(statement.line_ids)
+
+    def test_investment_deposit_appears_on_its_actual_date(self):
+        for date_from in ('2025-01-01', '2025-01-15'):
+            with self.subTest(date_from=date_from):
+                statement, _ = self._taxed_investment_statement(date_from=date_from, date_to='2025-01-15')
+                self.assertAlmostEqual(statement.opening_balance, 0.0)
+                self.assertAlmostEqual(statement.closing_balance, 10000.0)
+                self.assertEqual(len(statement.line_ids), 1)
+                self.assertEqual(statement.line_ids.date, fields.Date.to_date('2025-01-15'))
+                self.assertAlmostEqual(statement.line_ids.credit, 10000.0)
+                statement.action_generate()
+                self.assertEqual(len(statement.line_ids), 1)
+
+    def test_investment_deposit_is_carried_forward_without_duplication(self):
+        statement, _ = self._taxed_investment_statement(date_from='2025-01-16', date_to='2025-02-14')
+        self.assertAlmostEqual(statement.opening_balance, 10000.0)
+        self.assertAlmostEqual(statement.closing_balance, 10000.0)
+        self.assertFalse(statement.line_ids)
+
+    def test_investment_print_displays_deposit_withdrawal_and_tax_amounts(self):
+        from lxml import html as html_parser
+        statement, _ = self._taxed_investment_statement(withdraw=True)
+        report = self.env.ref('lenka_financiero.action_report_lenka_statement')
+        rendered, _ = report._render_qweb_html(report.report_name, docids=statement.ids)
+        document = html_parser.fromstring(rendered)
+        rows = document.xpath('//table[@name="investment_movements"]/tbody/tr')
+        self.assertEqual(len(rows), 4)
+        amounts = []
+        for row in rows:
+            cells = row.xpath('./td')
+            amounts.append(tuple(''.join(c for c in cell.text_content() if c.isdigit()) for cell in cells[-2:]))
+        self.assertCountEqual(amounts, [('1000000', '000'), ('100000', '000'), ('000', '10000'), ('000', '1090000')])
+        self.assertAlmostEqual(statement.opening_balance + sum(statement.line_ids.mapped('credit'))
+                               - sum(statement.line_ids.mapped('debit')), statement.closing_balance)
