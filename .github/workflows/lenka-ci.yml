@@ -1,0 +1,57 @@
+name: Lenka Pilot CI
+
+on:
+  push:
+    branches:
+      - lenka-pilot
+  workflow_dispatch:
+    inputs:
+      run_mobile:
+        description: 'Ejecutar validacion movil (fase pospuesta)'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  static-odoo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python syntax
+        run: python -m compileall -q lenka_financiero
+      - name: Validate XML and manifest
+        run: |
+          python - <<'PY'
+          import ast
+          import pathlib
+          import xml.etree.ElementTree as ET
+
+          root = pathlib.Path("lenka_financiero")
+          manifest = ast.literal_eval((root / "__manifest__.py").read_text(encoding="utf-8"))
+          assert manifest.get("installable") is True
+          for rel in manifest.get("data", []):
+              path = root / rel
+              assert path.exists(), f"Missing manifest file: {rel}"
+              if path.suffix == ".xml":
+                  ET.parse(path)
+          for path in root.rglob("*.xml"):
+              ET.parse(path)
+          print("Odoo static validation OK")
+          PY
+
+  flutter:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_mobile }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lenka_mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Flutter packages
+        run: flutter pub get
+      - name: Flutter analyze
+        run: flutter analyze

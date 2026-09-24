@@ -1,0 +1,189 @@
+name: Lenka Odoo 18 Integration
+
+on:
+  push:
+    branches:
+      - lenka-pilot
+    paths:
+      - 'lenka_financiero/**'
+      - '.github/workflows/lenka-odoo18-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  odoo18-install-and-tests:
+    runs-on: ubuntu-22.04
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U odoo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: odoo
+      PGPASSWORD: odoo
+
+    steps:
+      - name: Checkout Grupo MEGATK
+        uses: actions/checkout@v4
+
+      - name: Checkout Odoo 18 Community
+        uses: actions/checkout@v4
+        with:
+          repository: odoo/odoo
+          ref: '18.0'
+          path: odoo
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: odoo/requirements.txt
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libldap2-dev libsasl2-dev libpq-dev libxml2-dev libxslt1-dev zlib1g-dev libjpeg-dev libffi-dev libssl-dev
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip wheel
+          pip install -r odoo/requirements.txt
+
+      - name: Prepare isolated Lenka addons path
+        run: |
+          mkdir -p custom_addons
+          cp -R lenka_financiero custom_addons/lenka_financiero
+
+      - name: Install Lenka module in Odoo 18
+        run: |
+          python odoo/odoo-bin             --db_host=127.0.0.1             --db_port=5432             --db_user=odoo             --db_password=odoo             --addons-path=odoo/addons,custom_addons             -d lenka_test             -i lenka_financiero             --without-demo=all             --stop-after-init             --log-level=test
+
+      - name: Run Lenka tests
+        run: |
+          python odoo/odoo-bin \
+            --db_host=127.0.0.1 \
+            --db_port=5432 \
+            --db_user=odoo \
+            --db_password=odoo \
+            --addons-path=odoo/addons,custom_addons \
+            -d lenka_test \
+            -u lenka_financiero \
+            --without-demo=all \
+            --test-enable \
+            --test-tags=/lenka_financiero \
+            --stop-after-init \
+            --log-level=test
+
+      - name: Install Lenka demo database
+        run: |
+          python odoo/odoo-bin \
+            --db_host=127.0.0.1 \
+            --db_port=5432 \
+            --db_user=odoo \
+            --db_password=odoo \
+            --addons-path=odoo/addons,custom_addons \
+            -d lenka_demo \
+            -i lenka_financiero \
+            --stop-after-init \
+            --log-level=test
+
+      - name: Verify Lenka demo scenarios
+        run: |
+          operations=$(PGPASSWORD=odoo psql -h 127.0.0.1 -U odoo -d lenka_demo -tAc "SELECT count(*) FROM lenka_financial_operation WHERE notes LIKE 'Escenario demo:%';")
+          investments=$(PGPASSWORD=odoo psql -h 127.0.0.1 -U odoo -d lenka_demo -tAc "SELECT count(*) FROM lenka_investment WHERE notes LIKE 'Escenario demo:%';")
+          funding=$(PGPASSWORD=odoo psql -h 127.0.0.1 -U odoo -d lenka_demo -tAc "SELECT count(*) FROM lenka_funding_line fl JOIN lenka_financial_operation op ON op.id = fl.operation_id WHERE op.notes LIKE 'Escenario demo:%';")
+          guarantees=$(PGPASSWORD=odoo psql -h 127.0.0.1 -U odoo -d lenka_demo -tAc "SELECT count(*) FROM lenka_guarantee g JOIN lenka_financial_operation op ON op.id = g.operation_id WHERE op.notes LIKE 'Escenario demo:%';")
+
+          echo "Demo counts: operations=$operations investments=$investments funding=$funding guarantees=$guarantees"
+
+          test "$operations" -ge 3
+          test "$investments" -ge 1
+          test "$funding" -ge 2
+          test "$guarantees" -ge 1
+
+      - name: HTTP smoke test against live Odoo demo
+        run: |
+          python odoo/odoo-bin \
+            --db_host=127.0.0.1 \
+            --db_port=5432 \
+            --db_user=odoo \
+            --db_password=odoo \
+            --addons-path=odoo/addons,custom_addons \
+            -d lenka_demo \
+            --http-port=8069 \
+            --workers=0 \
+            --log-level=warn \
+            > /tmp/lenka_odoo.log 2>&1 &
+          ODOO_PID=$!
+
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8069/web/login >/tmp/lenka_login.html; then
+              break
+            fi
+            sleep 1
+          done
+
+          curl -fsS http://127.0.0.1:8069/web/login | grep -q "Odoo"
+          curl -fsS -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","method":"call","params":{},"id":1}' \
+            http://127.0.0.1:8069/web/webclient/version_info \
+            | grep -q '"server_version"'
+
+          kill $ODOO_PID
+          wait $ODOO_PID || true
+          echo "Lenka live Odoo HTTP smoke test OK"
+
+      - name: Live demo ORM smoke test
+        run: |
+          python odoo/odoo-bin shell \
+            --db_host=127.0.0.1 \
+            --db_port=5432 \
+            --db_user=odoo \
+            --db_password=odoo \
+            --addons-path=odoo/addons,custom_addons \
+            -d lenka_demo <<'PY'
+          Operation = env['lenka.financial.operation']
+          Investment = env['lenka.investment']
+
+          financing = Operation.search([('notes', '=', 'Escenario demo: financiamiento con 10% de prima y cuota nivelada.')], limit=1)
+          assert financing
+          financing.action_generate_schedule()
+          assert len(financing.schedule_line_ids) == 24
+          assert abs(sum(financing.schedule_line_ids.mapped('capital')) - financing.financed_amount) < 0.02
+
+          interest_only = Operation.search([('notes', '=', 'Escenario demo: pago mensual de intereses y capital al vencimiento.')], limit=1)
+          assert interest_only
+          interest_only.action_generate_schedule()
+          lines = interest_only.schedule_line_ids.sorted('sequence')
+          assert len(lines) == 12
+          assert abs(lines[0].capital) < 0.01
+          assert abs(lines[-1].capital - interest_only.financed_amount) < 0.02
+
+          lease = Operation.search([('notes', '=', 'Escenario demo: arrendamiento con opcion de compra del 5%.')], limit=1)
+          assert lease
+          lease.action_generate_schedule()
+          assert len(lease.schedule_line_ids) == 36
+          assert abs(lease.residual_purchase_amount - 7500.0) < 0.01
+
+          investment = Investment.search([('notes', '=', 'Escenario demo: 1.5% mensual; retiro anticipado recalcula retroactivamente al 1% mensual.')], limit=1)
+          assert investment
+          investment.action_activate()
+          assert investment.state == 'active'
+          assert investment.maturity_date
+
+          env.cr.commit()
+          print('LENKA_DEMO_ORM_OK')
+          PY
