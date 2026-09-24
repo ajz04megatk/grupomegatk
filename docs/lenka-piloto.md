@@ -8,7 +8,7 @@ El codigo se desarrolla en `ajz04megatk/grupomegatk`, rama `lenka-pilot`. El pro
 
 ## Publicacion autorizada
 
-1. Verificar que la conexion de GitHub tenga acceso de escritura a `rzavalatk/grupomegatk`. La autorizacion verbal del proyecto no concede este permiso tecnico; lo debe habilitar el propietario del repositorio.
+1. Trabajar con la cuenta `ajz04megatk`. El conector de ChatGPT puede rechazar escrituras en `rzavalatk/grupomegatk` aunque la sesion de navegador de ese usuario si tenga permisos. No confundir ese rechazo con falta de acceso del usuario ni exigir iniciar sesion como `rzavalatk`. La alternativa de navegador ya fue autorizada para este piloto.
 2. Leer el HEAD actual de `master` en ese repositorio y comprobar si ya existe `lenka-pilot`. Si existe, revisar su contenido antes de actualizarla.
 3. Crear la nueva rama desde el HEAD del repositorio de destino, incorporando solamente `lenka_financiero` desde una revision validada del repositorio de desarrollo. Conservar todos los demas archivos y submodulos del destino.
 4. Mantener la rama como entorno Development en Odoo.sh. No mover `master`, no reutilizar entornos de otros aplicativos y no contratar recursos adicionales.
@@ -16,6 +16,19 @@ El codigo se desarrolla en `ajz04megatk/grupomegatk`, rama `lenka-pilot`. El pro
 6. Ejecutar los casos de aceptacion siguientes con datos de prueba. Registrar revision, fecha, URL del piloto y resultados antes de entregar el acceso.
 
 No ejecutar el flujo `publish-v28.yml` del repositorio de destino: corresponde a otro aplicativo y modifica `master`.
+
+## Publicacion verificada el 24 de septiembre de 2026
+
+- Cuenta de GitHub y Odoo.sh: `ajz04megatk`.
+- Rama destino creada desde `master`: `rzavalatk/grupomegatk:lenka-pilot`, clasificada automaticamente como Development.
+- Preparacion: rama `ajz04megatk/grupomegatk:lenka-odoo18-release`, basada en el HEAD del destino e incorporando exclusivamente los 55 archivos de Lenka.
+- Incorporacion mediante la interfaz de GitHub: PR https://github.com/rzavalatk/grupomegatk/pull/27, fusionada en `lenka-pilot`.
+- Commit destino: `b699d220ff7053f5e92697b1e97823e99b10b737`.
+- Arbol del modulo: `4661b1ab248e98c4ff42ac1f83302ed2a64c95e5`, identico al validado con 192 pruebas sin fallos.
+- Configuracion especifica de la rama: instalar `lenka_financiero` y ejecutar pruebas de los modulos seleccionados. No heredar la instalacion de todos los aplicativos del repositorio.
+- Odoo.sh reconocio ambos commits y puso la construccion en cola. Este registro confirma publicacion y configuracion; la disponibilidad de la base y la validacion visual deben comprobarse cuando termine la construccion.
+
+En futuras actualizaciones, preparar desde el HEAD actual de la rama destino, conservar los demas archivos, comparar el alcance y fusionar exclusivamente hacia `lenka-pilot`. No cambiar permisos ni usar credenciales del propietario para suplir el limite del conector.
 
 ## Casos de aceptacion de reestructuracion
 
