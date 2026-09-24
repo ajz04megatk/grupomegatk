@@ -310,7 +310,11 @@ class LenkaRestructuring(models.Model):
             if original.payment_ids.filtered(lambda p: p.state == 'posted' and p.unapplied_amount > 0.01):
                 raise ValidationError(_('Existen cobros sin aplicar en la operacion original. Regularicelos antes de completar la reestructuracion.'))
             rec._check_approved_settlement()
-            if (not rec.currency_id.is_zero(successor.financed_amount - rec.proposed_principal_amount)
+            if (successor.partner_id != original.partner_id
+                    or successor.company_id != original.company_id
+                    or successor.currency_id != original.currency_id
+                    or successor.operation_type != original.operation_type
+                    or not rec.currency_id.is_zero(successor.financed_amount - rec.proposed_principal_amount)
                     or successor.interest_rate != rec.proposed_interest_rate
                     or successor.rate_period != rec.proposed_rate_period
                     or successor.term_months != rec.proposed_term_months
@@ -370,6 +374,13 @@ class LenkaOperationRestructuring(models.Model):
         return super().get_payoff_amount()
 
     def write(self, vals):
+        identity_fields = {'partner_id', 'company_id', 'currency_id', 'operation_type'}
+        if identity_fields.intersection(vals):
+            for rec in self.filtered('restructuring_in_ids'):
+                for name in identity_fields.intersection(vals):
+                    current = rec[name].id if name != 'operation_type' else rec[name]
+                    if vals[name] != current:
+                        raise ValidationError(_('La operacion sucesora debe conservar el cliente, la empresa, la moneda y el tipo de la operacion original.'))
         if 'state' in vals and vals['state'] != 'done' and any(rec.restructuring_out_ids.filtered('original_operation_closed') for rec in self):
             raise ValidationError(_('Una operacion sustituida por reestructuracion no puede reabrirse.'))
         return super().write(vals)

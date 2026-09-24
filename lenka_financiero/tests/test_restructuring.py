@@ -524,6 +524,47 @@ class TestLenkaRestructuring(TransactionCase):
         self.assertFalse(request.original_operation_closed)
         self.assertAlmostEqual(successor.restructured_funding_amount, 0.0)
 
+    def test_successor_identity_cannot_change_before_contract(self):
+        request = self._request()
+        request.action_submit()
+        request.action_approve()
+        request.action_prepare_successor()
+        successor = request.successor_operation_id
+        other_currency = self.env['res.currency'].search([
+            ('id', '!=', successor.currency_id.id),
+        ], limit=1)
+        other_company = self.env['res.company'].create({'name': 'Otra empresa Lenka'})
+        changes = {
+            'partner_id': self.guarantor.id,
+            'company_id': other_company.id,
+            'currency_id': other_currency.id,
+            'operation_type': 'leasing',
+        }
+        for name, value in changes.items():
+            with self.subTest(field=name), self.assertRaisesRegex(ValidationError, 'conservar el cliente'):
+                successor.write({name: value})
+        self.assertEqual(successor.partner_id, self.operation.partner_id)
+        self.assertEqual(successor.company_id, self.operation.company_id)
+        self.assertEqual(successor.currency_id, self.operation.currency_id)
+        self.assertEqual(successor.operation_type, self.operation.operation_type)
+        self.assertFalse(request.original_operation_closed)
+
+    def test_successor_identity_noop_write_remains_allowed(self):
+        request = self._request()
+        request.action_submit()
+        request.action_approve()
+        request.action_prepare_successor()
+        successor = request.successor_operation_id
+        successor.write({
+            'partner_id': successor.partner_id.id,
+            'company_id': successor.company_id.id,
+            'currency_id': successor.currency_id.id,
+            'operation_type': successor.operation_type,
+        })
+        self._contract_successor(request)
+        request.action_complete_restructuring()
+        self.assertTrue(request.original_operation_closed)
+
     def test_changed_balance_can_replace_uncontracted_successor_with_new_approval(self):
         self._operation_with_due_charges()
         request = self._request()
