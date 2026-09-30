@@ -1,6 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
+from odoo import fields
 from odoo.exceptions import UserError, ValidationError
 from odoo.tests.common import TransactionCase, tagged
 
@@ -55,6 +56,10 @@ class TestTodoistAvailability(TransactionCase):
             "start_datetime": start,
             "state": "scheduled",
         }
+
+    def _future_start(self, hour_utc=16):
+        day = fields.Date.today() + timedelta(days=2)
+        return datetime.combine(day, datetime.min.time()).replace(hour=hour_utc)
 
     def _block(self):
         return self.env["odental.appointment"].sudo().search([
@@ -129,3 +134,80 @@ class TestTodoistAvailability(TransactionCase):
         self.connection.default_duration_minutes = 45
         self.connection._reconcile_tasks([task])
         self.assertEqual(self._block().duration_minutes, 45)
+
+    def test_clinical_appointment_creates_moves_and_deletes_private_todoist_task(self):
+        appointment = self.env["odental.appointment"].create(
+            {**self._clinical_values(self._future_start()),
+             "notes": "Diagnóstico confidencial que nunca sale de O Dental"}
+        )
+        with patch.object(type(self.connection), "_send_json", return_value={"id": "mirror-1"}) as send:
+            self.connection._reconcile_exports([])
+        payload = send.call_args.args[3]
+        self.assertEqual(send.call_args.args[1:3], ("POST", "tasks"))
+        self.assertIn(self.patient.name, payload["content"])
+        self.assertIn(self.service.name, payload["content"])
+        self.assertNotIn("Diagnóstico confidencial", str(payload))
+        self.assertIn("10:00", payload["content"])
+        self.assertIn("reunión", payload["labels"])
+        mirror = self.env["odental.todoist.mirror"].sudo().search([
+            ("appointment_id", "=", appointment.id)
+        ])
+        self.assertEqual(mirror.task_id, "mirror-1")
+        remote = {"id": "mirror-1", "content": payload["content"],
+                  "description": payload["description"], "labels": ["odental"],
+                  "due": {"datetime": payload["due_datetime"]}}
+        appointment.write({"start_datetime": self._future_start(18)})
+        with patch.object(type(self.connection), "_send_json", return_value=None) as send:
+            self.connection._reconcile_exports([remote])
+        self.assertEqual(send.call_args.args[1:3], ("POST", "tasks/mirror-1"))
+        self.assertIn("12:00", send.call_args.args[3]["content"])
+        appointment.action_cancel()
+        with patch.object(type(self.connection), "_send_json", return_value=None) as send:
+            self.connection._reconcile_exports([remote])
+        self.assertEqual(send.call_args.args[1:3], ("DELETE", "tasks/mirror-1"))
+        self.assertFalse(mirror.exists())
+
+    def test_doctor_moving_todoist_mirror_updates_clinical_appointment(self):
+        appointment = self.env["odental.appointment"].create(
+            self._clinical_values(self._future_start())
+        )
+        with patch.object(type(self.connection), "_send_json", return_value={"id": "mirror-2"}):
+            self.connection._reconcile_exports([])
+        original = self.connection._export_payload(appointment)
+        # Reception and the doctor both move the visit before the next poll.
+        appointment.write({"start_datetime": self._future_start(17)})
+        doctor_edit = {"id": "mirror-2", "content": original["content"],
+                       "description": original["description"], "labels": ["reunión", "odental"],
+                       "due": {"datetime": self._future_start(18).isoformat() + "Z"}}
+        with patch.object(type(self.connection), "_send_json", return_value=None):
+            self.connection._reconcile_exports([doctor_edit])
+        self.assertEqual(appointment.start_datetime, self._future_start(18))
+        self.assertFalse(appointment.external_conflict)
+
+    def test_doctor_move_into_occupied_clinical_slot_is_flagged(self):
+        appointment = self.env["odental.appointment"].create(
+            self._clinical_values(self._future_start())
+        )
+        with patch.object(type(self.connection), "_send_json", return_value={"id": "mirror-3"}):
+            self.connection._reconcile_exports([])
+        self.env["odental.appointment"].create(self._clinical_values(self._future_start(18)))
+        original = self.connection._export_payload(appointment)
+        doctor_edit = {"id": "mirror-3", "content": original["content"],
+                       "description": original["description"], "labels": ["reunión", "odental"],
+                       "due": {"datetime": self._future_start(18).isoformat() + "Z"}}
+        with patch.object(type(self.connection), "_send_json", return_value={"id": "mirror-4"}) as send:
+            conflict = self.connection._reconcile_exports([doctor_edit])
+        self.assertTrue(conflict)
+        self.assertTrue(appointment.external_conflict)
+        self.assertEqual(appointment.start_datetime, self._future_start())
+        self.assertFalse(any(call.args[2] == "tasks/mirror-3" for call in send.call_args_list))
+
+    def test_clinical_mirror_never_reimports_as_meeting(self):
+        appointment = self.env["odental.appointment"].create(
+            self._clinical_values(self._future_start())
+        )
+        remote = {"id": "mirror-1", "description": self.connection._export_payload(appointment)["description"],
+                  "labels": ["reunión", "odental"], "due": {"datetime": "2026-10-02T16:00:00Z"},
+                  "duration": {"amount": 60, "unit": "minute"}}
+        self.connection._reconcile_tasks([remote])
+        self.assertFalse(self._block())

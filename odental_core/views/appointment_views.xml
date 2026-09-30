@@ -21,6 +21,9 @@
                     <div class="alert alert-warning" role="alert" invisible="entry_type != 'busy' or not external_conflict">
                         Este horario privado coincide con una cita clínica. Revise el conflicto con el profesional.
                     </div>
+                    <div class="alert alert-warning" role="alert" invisible="entry_type != 'clinical' or not external_conflict">
+                        El profesional cambió este horario en su agenda personal, pero coincide con otra reserva clínica. Resuelva el conflicto antes de confirmar al paciente.
+                    </div>
                     <field name="external_conflict" invisible="1"/>
                     <group>
                         <group>

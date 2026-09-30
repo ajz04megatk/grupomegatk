@@ -1,5 +1,7 @@
 """Private Todoist availability. Task titles and descriptions never enter Odoo."""
 
+import hashlib
+import json
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -10,6 +12,7 @@ from odoo.exceptions import AccessError, UserError, ValidationError
 
 
 TODOIST_API = "https://api.todoist.com/api/v1"
+MIRROR_DESCRIPTION = "Bloqueo automático O Dental. Referencia: "
 
 
 class ODentalTodoistConnection(models.Model):
@@ -101,6 +104,21 @@ class ODentalTodoistConnection(models.Model):
             seen_cursors.add(cursor)
         raise UserError("La consulta de Todoist quedó incompleta; no se liberó ningún bloqueo.")
 
+    @api.model
+    def _send_json(self, token, method, endpoint, payload=None):
+        try:
+            response = requests.request(
+                method, f"{TODOIST_API}/{endpoint}",
+                headers={"Authorization": f"Bearer {token}"},
+                json=payload, timeout=15,
+            )
+            if method == "DELETE" and response.status_code == 404:
+                return None  # A task already removed by its owner is retired.
+            response.raise_for_status()
+            return response.json() if response.content else None
+        except (requests.RequestException, ValueError) as exc:
+            raise UserError("No se pudo actualizar Todoist. Revise la conexión o autorización.") from exc
+
     def _task_interval(self, task):
         self.ensure_one()
         if not isinstance(task, dict) or task.get("checked") or task.get("is_deleted"):
@@ -160,6 +178,8 @@ class ODentalTodoistConnection(models.Model):
         existing = {item.external_uid: item for item in appointments.search(domain)}
         seen = set()
         for task in tasks:
+            if isinstance(task, dict) and str(task.get("description") or "").startswith(MIRROR_DESCRIPTION):
+                continue  # Clinical mirrors never become personal meeting blocks.
             interval = self._task_interval(task)
             task_id = str(task.get("id") or "") if isinstance(task, dict) else ""
             if not interval or not task_id or task_id.startswith("tmp-"):
@@ -188,6 +208,146 @@ class ODentalTodoistConnection(models.Model):
             if task_id not in seen and current.state != "cancelled":
                 current.write({"state": "cancelled", "external_conflict": False})
 
+    def _export_marker(self, appointment):
+        self.ensure_one()
+        identity = f"{self.env.cr.dbname}:{self.id}:{appointment.id}"
+        return hashlib.sha256(identity.encode()).hexdigest()[:24]
+
+    def _export_payload(self, appointment):
+        self.ensure_one()
+        local_tz = ZoneInfo(self.source_timezone)
+        start = appointment.start_datetime.replace(tzinfo=timezone.utc)
+        end = appointment.end_datetime.replace(tzinfo=timezone.utc)
+        first, last = start.astimezone(local_tz), end.astimezone(local_tz)
+        interval = f"{first:%d/%m %H:%M}–{last:%H:%M}"
+        return {
+            "content": f"Atender a {appointment.patient_id.name} · {appointment.service_id.name} · {interval}",
+            "description": MIRROR_DESCRIPTION + self._export_marker(appointment),
+            "labels": [self.label_name.strip().lstrip("@"), "odental"],
+            # Duration is intentionally absent so free Todoist accounts work;
+            # the end time is visible in the neutral task title.
+            "due_datetime": start.isoformat().replace("+00:00", "Z"),
+        }
+
+    @api.model
+    def _remote_matches(self, remote, payload):
+        due = remote.get("due") or {}
+        actual_due = due.get("datetime") or due.get("date") if isinstance(due, dict) else ""
+        try:
+            expected = datetime.fromisoformat(payload["due_datetime"].replace("Z", "+00:00"))
+            actual = datetime.fromisoformat(actual_due.replace("Z", "+00:00"))
+            same_time = expected == actual
+        except (AttributeError, TypeError, ValueError):
+            same_time = False
+        return (remote.get("content") == payload["content"]
+                and remote.get("description") == payload["description"]
+                and set(payload["labels"]).issubset(set(remote.get("labels") or []))
+                and same_time)
+
+    def _mirror_interval(self, task, fallback_minutes):
+        self.ensure_one()
+        due = task.get("due") or {}
+        if not isinstance(due, dict):
+            return None
+        value = due.get("datetime") or due.get("date") or ""
+        if not isinstance(value, str) or "T" not in value:
+            return None
+        try:
+            start = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=ZoneInfo(due.get("timezone") or self.source_timezone))
+            duration = task.get("duration") or {}
+            minutes = duration.get("amount", fallback_minutes) if isinstance(duration, dict) else fallback_minutes
+            if not isinstance(minutes, int) or not 0 < minutes <= 1440:
+                return None
+            return start.astimezone(timezone.utc).replace(tzinfo=None), minutes
+        except (ValueError, TypeError, ZoneInfoNotFoundError):
+            return None
+
+    def _reconcile_exports(self, tasks):
+        self.ensure_one()
+        if not self.env.is_superuser():
+            raise AccessError("La publicación de citas requiere el proceso autorizado de O Dental.")
+        mirrors = self.env["odental.todoist.mirror"].sudo().with_company(self.company_id)
+        existing = {item.appointment_id.id: item for item in mirrors.search([("connection_id", "=", self.id)])}
+        appointments = self.env["odental.appointment"].sudo().with_company(self.company_id)
+        active = appointments.search([
+            ("entry_type", "=", "clinical"),
+            ("active", "=", True),
+            ("organization_id", "=", self.organization_id.id),
+            ("professional_id", "=", self.professional_id.id),
+            ("state", "in", ("scheduled", "confirmed", "in_progress")),
+            ("start_datetime", ">=", fields.Datetime.now() - timedelta(days=1)),
+        ])
+        # A previously published visit can be moved from an old date in
+        # Todoist; retain its mirror in the reconciliation until retired.
+        active |= appointments.browse(list(existing)).filtered(lambda appointment:
+            appointment.active and appointment.entry_type == "clinical"
+            and appointment.organization_id == self.organization_id
+            and appointment.professional_id == self.professional_id
+            and appointment.state in ("scheduled", "confirmed", "in_progress"))
+        remote_by_id = {str(task.get("id")): task for task in tasks if isinstance(task, dict) and task.get("id")}
+        remote_by_marker = {
+            task.get("description"): task for task in tasks
+            if isinstance(task, dict) and str(task.get("description") or "").startswith(MIRROR_DESCRIPTION)
+        }
+        conflicts = False
+        for appointment in active:
+            mirror = existing.pop(appointment.id, False)
+            marker = MIRROR_DESCRIPTION + self._export_marker(appointment)
+            remote = (remote_by_id.get(mirror.task_id) if mirror else None) or remote_by_marker.get(marker)
+            if remote:
+                task_id = str(remote["id"])
+                interval = self._mirror_interval(remote, appointment.duration_minutes)
+                if mirror and mirror.synced_start and interval and (
+                    interval[0] != mirror.synced_start
+                    or (remote.get("duration") and interval[1] != mirror.synced_duration)
+                ):
+                    # The doctor's Todoist time wins even if reception also
+                    # moved this appointment since the last reconciliation.
+                    try:
+                        with self.env.cr.savepoint():
+                            appointment.write({"start_datetime": interval[0], "duration_minutes": interval[1]})
+                    except ValidationError:
+                        appointment.write({"external_conflict": True})
+                        conflicts = True
+                        continue  # Keep the doctor's edit for manual conflict resolution.
+                    appointment.write({"external_conflict": False})
+                payload = self._export_payload(appointment)
+                explicit_duration = remote.get("duration") or {}
+                if isinstance(explicit_duration, dict) and explicit_duration.get("unit") == "minute":
+                    payload.update({"duration": appointment.duration_minutes, "duration_unit": "minute"})
+                if not self._remote_matches(remote, payload):
+                    self._send_json(self.api_token, "POST", f"tasks/{task_id}", payload)
+            else:
+                payload = self._export_payload(appointment)
+                created = self._send_json(self.api_token, "POST", "tasks", payload)
+                if not isinstance(created, dict) or not created.get("id"):
+                    raise UserError("Todoist no confirmó la creación del bloqueo clínico.")
+                task_id = str(created["id"])
+            fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+            values = {"task_id": task_id, "fingerprint": fingerprint,
+                      "synced_start": appointment.start_datetime,
+                      "synced_duration": appointment.duration_minutes}
+            if mirror:
+                mirror.write(values)
+            else:
+                mirrors.create({"connection_id": self.id, "appointment_id": appointment.id, **values})
+        for mirror in existing.values():
+            if mirror.task_id in remote_by_id:
+                self._send_json(self.api_token, "DELETE", f"tasks/{mirror.task_id}")
+            mirror.unlink()
+        return conflicts
+
+    def _retire_exports(self):
+        self.ensure_one()
+        if not self.env.is_superuser():
+            raise AccessError("La desconexión requiere el proceso autorizado de O Dental.")
+        mirrors = self.env["odental.todoist.mirror"].sudo().search([("connection_id", "=", self.id)])
+        for mirror in mirrors:
+            self._send_json(self.api_token, "DELETE", f"tasks/{mirror.task_id}")
+        mirrors.unlink()
+
     def _sync_one(self):
         self.ensure_one()
         if not self.env.is_superuser():
@@ -198,7 +358,9 @@ class ODentalTodoistConnection(models.Model):
         # Reconcile only after every page succeeded: a partial response must
         # never cancel legitimate blocks.
         self._reconcile_tasks(tasks)
-        self.sudo().write({"last_synced_at": fields.Datetime.now(), "last_error": False})
+        conflicts = self._reconcile_exports(tasks)
+        self.sudo().write({"last_synced_at": fields.Datetime.now(),
+                           "last_error": "Revise citas clínicas con conflicto de horario." if conflicts else False})
 
     def action_sync_now(self):
         self._check_owner()
@@ -209,6 +371,7 @@ class ODentalTodoistConnection(models.Model):
     def action_disconnect(self):
         self._check_owner()
         for connection in self:
+            connection.sudo()._retire_exports()
             connection.sudo().write({"active": False, "api_token": False})
             blocks = self.env["odental.appointment"].sudo().search([
                 ("entry_type", "=", "busy"),
@@ -230,3 +393,22 @@ class ODentalTodoistConnection(models.Model):
                     connection._sync_one()
             except Exception:  # One failed account must not block other clinics.
                 connection.sudo().write({"last_error": "Todoist no se actualizó; revise la conexión."})
+
+
+class ODentalTodoistMirror(models.Model):
+    _name = "odental.todoist.mirror"
+    _description = "Cita clínica publicada en Todoist"
+
+    connection_id = fields.Many2one("odental.todoist.connection", required=True, ondelete="cascade", index=True)
+    appointment_id = fields.Many2one("odental.appointment", required=True, ondelete="cascade", index=True)
+    task_id = fields.Char(required=True, index=True)
+    fingerprint = fields.Char(required=True)
+    synced_start = fields.Datetime(string="Último inicio conciliado")
+    synced_duration = fields.Integer(string="Última duración conciliada")
+
+    _sql_constraints = [
+        ("connection_appointment_unique", "unique(connection_id, appointment_id)",
+         "La cita ya está publicada en esta conexión."),
+        ("connection_task_unique", "unique(connection_id, task_id)",
+         "La tarea ya está vinculada a una cita clínica."),
+    ]
