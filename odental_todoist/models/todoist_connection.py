@@ -168,7 +168,10 @@ class ODentalTodoistConnection(models.Model):
         self.ensure_one()
         if not self.env.is_superuser():
             raise AccessError("La sincronización requiere el proceso autorizado de O Dental.")
-        appointments = self.env["odental.appointment"].sudo().with_company(self.company_id)
+        appointments = self.env["odental.appointment"].sudo().with_company(self.company_id).with_context(
+            odental_audit_source="todoist",
+            odental_audit_actor_user_id=self.professional_id.user_id.id,
+        )
         domain = [
             ("entry_type", "=", "busy"),
             ("organization_id", "=", self.organization_id.id),
@@ -270,7 +273,10 @@ class ODentalTodoistConnection(models.Model):
             raise AccessError("La publicación de citas requiere el proceso autorizado de O Dental.")
         mirrors = self.env["odental.todoist.mirror"].sudo().with_company(self.company_id)
         existing = {item.appointment_id.id: item for item in mirrors.search([("connection_id", "=", self.id)])}
-        appointments = self.env["odental.appointment"].sudo().with_company(self.company_id)
+        appointments = self.env["odental.appointment"].sudo().with_company(self.company_id).with_context(
+            odental_audit_source="todoist",
+            odental_audit_actor_user_id=self.professional_id.user_id.id,
+        )
         active = appointments.search([
             ("entry_type", "=", "clinical"),
             ("active", "=", True),

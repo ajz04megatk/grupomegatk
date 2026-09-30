@@ -95,6 +95,10 @@ class TestTodoistAvailability(TransactionCase):
         self.assertEqual(block.start_datetime, datetime(2026, 10, 2, 18))
         self.connection._reconcile_tasks([self._task(labels=["personal"])])
         self.assertEqual(block.state, "cancelled")
+        self.assertEqual(block.last_schedule_change_source, "todoist")
+        self.assertEqual(block.last_schedule_changed_by, self.professional.user_id)
+        self.assertEqual(block.schedule_audit_ids.sorted("id").mapped("event"),
+                         ["created", "changed", "cancelled"])
 
     def test_incomplete_provider_response_keeps_existing_block(self):
         self.connection._reconcile_tasks([self._task()])
@@ -183,6 +187,13 @@ class TestTodoistAvailability(TransactionCase):
             self.connection._reconcile_exports([doctor_edit])
         self.assertEqual(appointment.start_datetime, self._future_start(18))
         self.assertFalse(appointment.external_conflict)
+        entries = appointment.schedule_audit_ids.sorted("id")
+        self.assertEqual(entries.mapped("source"), ["odoo", "odoo", "todoist"])
+        self.assertEqual(entries[-1].actor_user_id, self.professional.user_id)
+        self.assertEqual(entries[-1].old_values["start_datetime"],
+                         fields.Datetime.to_string(self._future_start(17)))
+        self.assertEqual(entries[-1].new_values["start_datetime"],
+                         fields.Datetime.to_string(self._future_start(18)))
 
     def test_doctor_move_into_occupied_clinical_slot_is_flagged(self):
         appointment = self.env["odental.appointment"].create(
