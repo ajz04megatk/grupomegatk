@@ -233,10 +233,29 @@ class TestTodoistAvailability(TransactionCase):
             "name": "Profesional con cuenta equivocada",
             "login": "odental-todoist-mismatch@example.invalid",
             "company_id": other_company.id,
-            "company_ids": [(6, 0, [other_company.id, self.env.company.id])],
+            "company_ids": [(6, 0, [other_company.id])],
         })
         self.professional.user_id = wrong_user
         with patch.object(type(self.connection), "_fetch_tasks") as fetch:
-            with self.assertRaisesRegex(ValidationError, "compañía principal"):
+            with self.assertRaisesRegex(ValidationError, "acceso a la compañía"):
                 self.connection._sync_one()
             fetch.assert_not_called()
+
+    def test_secondary_company_professional_can_sync_own_clinic(self):
+        other_company = self.env["res.company"].sudo().search([
+            ("id", "!=", self.env.company.id),
+        ], limit=1)
+        if not other_company:
+            self.skipTest("La prueba requiere una segunda compañía.")
+        professional_user = self.env["res.users"].with_context(no_reset_password=True).create({
+            "name": "Profesional multiempresa",
+            "login": "odental-todoist-multicompany@example.invalid",
+            "company_id": other_company.id,
+            "company_ids": [(6, 0, [other_company.id, self.env.company.id])],
+        })
+        self.professional.user_id = professional_user
+        with patch.object(type(self.connection), "_fetch_tasks", return_value=[]) as fetch, \
+             patch.object(type(self.connection), "_reconcile_tasks"), \
+             patch.object(type(self.connection), "_reconcile_exports", return_value=[]):
+            self.connection._sync_one()
+            fetch.assert_called_once_with("synthetic-test-token")
