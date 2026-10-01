@@ -222,3 +222,17 @@ class TestTodoistAvailability(TransactionCase):
                   "duration": {"amount": 60, "unit": "minute"}}
         self.connection._reconcile_tasks([remote])
         self.assertFalse(self._block())
+
+    def test_cross_company_user_cannot_sync(self):
+        other_company = self.env["res.company"].create({"name": "Otra compañía de prueba"})
+        wrong_user = self.env["res.users"].with_context(no_reset_password=True).create({
+            "name": "Profesional con cuenta equivocada",
+            "login": "odental-todoist-mismatch@example.invalid",
+            "company_id": other_company.id,
+            "company_ids": [(6, 0, [other_company.id, self.env.company.id])],
+        })
+        self.professional.user_id = wrong_user
+        with patch.object(type(self.connection), "_fetch_tasks") as fetch:
+            with self.assertRaisesRegex(ValidationError, "compañía principal"):
+                self.connection._sync_one()
+            fetch.assert_not_called()

@@ -48,6 +48,9 @@ class ODentalTodoistConnection(models.Model):
                 raise ValidationError("El profesional debe pertenecer a la organización.")
             if connection.professional_id.company_id != connection.organization_id.company_id:
                 raise ValidationError("La conexión debe permanecer dentro de la compañía del profesional.")
+            if (not connection.professional_id.user_id or
+                    connection.professional_id.user_id.company_id != connection.company_id):
+                raise ValidationError("El usuario del profesional debe tener la misma compañía principal.")
             if not 0 < connection.default_duration_minutes <= 1440:
                 raise ValidationError("La duración predeterminada debe estar entre 1 y 1440 minutos.")
             try:
@@ -61,6 +64,8 @@ class ODentalTodoistConnection(models.Model):
                 raise AccessError("Solo el profesional puede administrar su propia conexión Todoist.")
             if connection.company_id not in self.env.companies:
                 raise AccessError("Cambie a la compañía autorizada del profesional.")
+            if connection.professional_id.user_id.company_id != connection.company_id:
+                raise AccessError("El usuario del profesional no pertenece a la compañía principal de la clínica.")
 
     @api.model
     def _get_json(self, token, endpoint, params=None):
@@ -362,6 +367,8 @@ class ODentalTodoistConnection(models.Model):
             raise AccessError("La sincronización requiere el proceso autorizado de O Dental.")
         if not self.active or not self.api_token:
             return
+        if self.professional_id.user_id.company_id != self.company_id:
+            raise ValidationError("El usuario del profesional debe tener la misma compañía principal.")
         tasks = self._fetch_tasks(self.api_token)
         # Reconcile only after every page succeeded: a partial response must
         # never cancel legitimate blocks.
@@ -388,7 +395,7 @@ class ODentalTodoistConnection(models.Model):
                 ("external_source", "=", "todoist"),
                 ("state", "!=", "cancelled"),
             ])
-            blocks.write({"state": "cancelled"})
+            blocks.with_context(odental_skip_automatic_messages=True).write({"state": "cancelled"})
         return {"type": "ir.actions.client", "tag": "reload"}
 
     @api.model
