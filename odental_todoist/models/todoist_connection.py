@@ -22,6 +22,10 @@ class ODentalTodoistConnection(models.Model):
 
     professional_id = fields.Many2one("odental.professional", required=True, ondelete="cascade", index=True)
     organization_id = fields.Many2one("odental.organization", required=True, ondelete="cascade", index=True)
+    pilot_patient_id = fields.Many2one(
+        "odental.patient", string="Paciente de prueba", required=True, ondelete="restrict",
+        help="Durante el piloto solo se publican en Todoist las citas de este paciente.",
+    )
     company_id = fields.Many2one(related="organization_id.company_id", store=True, index=True)
     # The user enters this through the short-lived wizard. Only the superuser
     # running the sync can read the stored credential, never clinical staff.
@@ -41,13 +45,18 @@ class ODentalTodoistConnection(models.Model):
          "Ya existe una conexión Todoist para este profesional y organización."),
     ]
 
-    @api.constrains("professional_id", "organization_id", "source_timezone", "default_duration_minutes")
+    @api.constrains("professional_id", "organization_id", "pilot_patient_id", "source_timezone", "default_duration_minutes")
     def _check_scope(self):
         for connection in self:
             if connection.organization_id not in connection.professional_id.organization_ids:
                 raise ValidationError("El profesional debe pertenecer a la organización.")
             if connection.professional_id.company_id != connection.organization_id.company_id:
                 raise ValidationError("La conexión debe permanecer dentro de la compañía del profesional.")
+            if connection.pilot_patient_id.organization_id != connection.organization_id:
+                raise ValidationError("El paciente de prueba debe pertenecer a la organización.")
+            if (not connection.professional_id.user_id or
+                    connection.company_id not in connection.professional_id.user_id.company_ids):
+                raise ValidationError("El usuario del profesional debe tener acceso a la compañía de la clínica.")
             if not 0 < connection.default_duration_minutes <= 1440:
                 raise ValidationError("La duración predeterminada debe estar entre 1 y 1440 minutos.")
             try:
@@ -61,6 +70,8 @@ class ODentalTodoistConnection(models.Model):
                 raise AccessError("Solo el profesional puede administrar su propia conexión Todoist.")
             if connection.company_id not in self.env.companies:
                 raise AccessError("Cambie a la compañía autorizada del profesional.")
+            if connection.company_id not in connection.professional_id.user_id.company_ids:
+                raise AccessError("El usuario del profesional no tiene acceso a la compañía de la clínica.")
 
     @api.model
     def _get_json(self, token, endpoint, params=None):
@@ -199,7 +210,7 @@ class ODentalTodoistConnection(models.Model):
             if current:
                 changed = {key: value for key, value in values.items() if current[key] != value}
                 if changed:
-                    current.write(changed)
+                    current.with_context(odental_skip_automatic_messages=True).write(changed)
             else:
                 appointments.create({
                     **values, "entry_type": "busy",
@@ -209,7 +220,9 @@ class ODentalTodoistConnection(models.Model):
                 })
         for task_id, current in existing.items():
             if task_id not in seen and current.state != "cancelled":
-                current.write({"state": "cancelled", "external_conflict": False})
+                current.with_context(odental_skip_automatic_messages=True).write(
+                    {"state": "cancelled", "external_conflict": False}
+                )
 
     def _export_marker(self, appointment):
         self.ensure_one()
@@ -282,6 +295,7 @@ class ODentalTodoistConnection(models.Model):
             ("active", "=", True),
             ("organization_id", "=", self.organization_id.id),
             ("professional_id", "=", self.professional_id.id),
+            ("patient_id", "=", self.pilot_patient_id.id),
             ("state", "in", ("scheduled", "confirmed", "in_progress")),
             ("start_datetime", ">=", fields.Datetime.now() - timedelta(days=1)),
         ])
@@ -291,6 +305,7 @@ class ODentalTodoistConnection(models.Model):
             appointment.active and appointment.entry_type == "clinical"
             and appointment.organization_id == self.organization_id
             and appointment.professional_id == self.professional_id
+            and appointment.patient_id == self.pilot_patient_id
             and appointment.state in ("scheduled", "confirmed", "in_progress"))
         remote_by_id = {str(task.get("id")): task for task in tasks if isinstance(task, dict) and task.get("id")}
         remote_by_marker = {
@@ -360,6 +375,8 @@ class ODentalTodoistConnection(models.Model):
             raise AccessError("La sincronización requiere el proceso autorizado de O Dental.")
         if not self.active or not self.api_token:
             return
+        if self.company_id not in self.professional_id.user_id.company_ids:
+            raise ValidationError("El usuario del profesional debe tener acceso a la compañía de la clínica.")
         tasks = self._fetch_tasks(self.api_token)
         # Reconcile only after every page succeeded: a partial response must
         # never cancel legitimate blocks.
@@ -386,7 +403,7 @@ class ODentalTodoistConnection(models.Model):
                 ("external_source", "=", "todoist"),
                 ("state", "!=", "cancelled"),
             ])
-            blocks.write({"state": "cancelled"})
+            blocks.with_context(odental_skip_automatic_messages=True).write({"state": "cancelled"})
         return {"type": "ir.actions.client", "tag": "reload"}
 
     @api.model

@@ -8,6 +8,7 @@ class ODentalTodoistConnectWizard(models.TransientModel):
 
     professional_id = fields.Many2one("odental.professional", required=True)
     organization_id = fields.Many2one("odental.organization", required=True)
+    pilot_patient_id = fields.Many2one("odental.patient", string="Paciente de prueba", required=True)
     api_token = fields.Char(string="Token personal de Todoist", required=True)
     label_name = fields.Char(string="Etiqueta de reunión", default="reunión", required=True)
     default_duration_minutes = fields.Integer(
@@ -38,8 +39,14 @@ class ODentalTodoistConnectWizard(models.TransientModel):
         organization = self.organization_id
         if not professional or professional.user_id != self.env.user:
             raise AccessError("Solo el profesional titular puede conectar su Todoist.")
-        if organization not in professional.organization_ids or organization.company_id not in self.env.companies:
+        if (organization not in professional.organization_ids or
+                organization.company_id != self.env.company or
+                organization.company_id not in self.env.user.company_ids):
             raise AccessError("La organización no está autorizada para este profesional.")
+        if professional.company_id != organization.company_id:
+            raise AccessError("El profesional debe pertenecer a la compañía de la clínica.")
+        if self.pilot_patient_id.organization_id != organization:
+            raise AccessError("Seleccione un paciente de prueba de esta organización.")
         if not self.label_name.strip():
             raise UserError("Indique una etiqueta que bloqueará la agenda.")
         if not 0 < self.default_duration_minutes <= 1440:
@@ -54,6 +61,7 @@ class ODentalTodoistConnectWizard(models.TransientModel):
         values = {
             "professional_id": professional.id,
             "organization_id": organization.id,
+            "pilot_patient_id": self.pilot_patient_id.id,
             "api_token": self.api_token,
             "todoist_user_id": todoist_user_id,
             "label_name": self.label_name.strip(),

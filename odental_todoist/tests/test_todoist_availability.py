@@ -33,6 +33,7 @@ class TestTodoistAvailability(TransactionCase):
         cls.connection = cls.env["odental.todoist.connection"].sudo().create({
             "professional_id": cls.professional.id,
             "organization_id": cls.organization.id,
+            "pilot_patient_id": cls.patient.id,
             "api_token": "synthetic-test-token",
             "todoist_user_id": "doctor-1",
         })
@@ -113,9 +114,13 @@ class TestTodoistAvailability(TransactionCase):
             "user_ids": [(4, self.env.user.id)],
         })
         self.professional.organization_ids = [(4, second.id)]
+        second_patient = self.env["odental.patient"].create({
+            "name": "Paciente de segunda clínica", "organization_id": second.id,
+        })
         other_connection = self.env["odental.todoist.connection"].sudo().create({
             "professional_id": self.professional.id,
             "organization_id": second.id,
+            "pilot_patient_id": second_patient.id,
             "api_token": "synthetic-test-token", "todoist_user_id": "doctor-1",
         })
         self.connection._reconcile_tasks([self._task()])
@@ -171,6 +176,31 @@ class TestTodoistAvailability(TransactionCase):
         self.assertEqual(send.call_args.args[1:3], ("DELETE", "tasks/mirror-1"))
         self.assertFalse(mirror.exists())
 
+    def test_pilot_never_exports_other_patient_appointments(self):
+        real_patient = self.env["odental.patient"].create({
+            "name": "Paciente fuera de prueba", "organization_id": self.organization.id,
+        })
+        real_appointment = self.env["odental.appointment"].create({
+            **self._clinical_values(self._future_start()), "patient_id": real_patient.id,
+        })
+        with patch.object(type(self.connection), "_send_json") as send:
+            self.connection._reconcile_exports([])
+            send.assert_not_called()
+        self.assertFalse(self.env["odental.todoist.mirror"].sudo().search([
+            ("appointment_id", "=", real_appointment.id),
+        ]))
+
+    def test_pilot_patient_must_belong_to_clinic(self):
+        second = self.env["odental.organization"].create({
+            "name": "Otra clínica", "code": "PILOT-OTHER",
+            "user_ids": [(4, self.env.user.id)],
+        })
+        other_patient = self.env["odental.patient"].create({
+            "name": "Otra persona", "organization_id": second.id,
+        })
+        with self.assertRaisesRegex(ValidationError, "paciente de prueba"), self.env.cr.savepoint():
+            self.connection.pilot_patient_id = other_patient
+
     def test_doctor_moving_todoist_mirror_updates_clinical_appointment(self):
         appointment = self.env["odental.appointment"].create(
             self._clinical_values(self._future_start())
@@ -222,3 +252,40 @@ class TestTodoistAvailability(TransactionCase):
                   "duration": {"amount": 60, "unit": "minute"}}
         self.connection._reconcile_tasks([remote])
         self.assertFalse(self._block())
+
+    def test_cross_company_user_cannot_sync(self):
+        other_company = self.env["res.company"].sudo().search([
+            ("id", "!=", self.env.company.id),
+        ], limit=1)
+        if not other_company:
+            self.skipTest("La prueba de aislamiento requiere una segunda compañía.")
+        wrong_user = self.env["res.users"].with_context(no_reset_password=True).create({
+            "name": "Profesional con cuenta equivocada",
+            "login": "odental-todoist-mismatch@example.invalid",
+            "company_id": other_company.id,
+            "company_ids": [(6, 0, [other_company.id])],
+        })
+        self.professional.user_id = wrong_user
+        with patch.object(type(self.connection), "_fetch_tasks") as fetch:
+            with self.assertRaisesRegex(ValidationError, "acceso a la compañía"):
+                self.connection._sync_one()
+            fetch.assert_not_called()
+
+    def test_secondary_company_professional_can_sync_own_clinic(self):
+        other_company = self.env["res.company"].sudo().search([
+            ("id", "!=", self.env.company.id),
+        ], limit=1)
+        if not other_company:
+            self.skipTest("La prueba requiere una segunda compañía.")
+        professional_user = self.env["res.users"].with_context(no_reset_password=True).create({
+            "name": "Profesional multiempresa",
+            "login": "odental-todoist-multicompany@example.invalid",
+            "company_id": other_company.id,
+            "company_ids": [(6, 0, [other_company.id, self.env.company.id])],
+        })
+        self.professional.user_id = professional_user
+        with patch.object(type(self.connection), "_fetch_tasks", return_value=[]) as fetch, \
+             patch.object(type(self.connection), "_reconcile_tasks"), \
+             patch.object(type(self.connection), "_reconcile_exports", return_value=[]):
+            self.connection._sync_one()
+            fetch.assert_called_once_with("synthetic-test-token")
