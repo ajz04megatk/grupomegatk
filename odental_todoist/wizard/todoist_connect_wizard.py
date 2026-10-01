@@ -38,10 +38,12 @@ class ODentalTodoistConnectWizard(models.TransientModel):
         organization = self.organization_id
         if not professional or professional.user_id != self.env.user:
             raise AccessError("Solo el profesional titular puede conectar su Todoist.")
-        if organization not in professional.organization_ids or organization.company_id not in self.env.companies:
+        if (organization not in professional.organization_ids or
+                organization.company_id != self.env.company or
+                organization.company_id not in self.env.user.company_ids):
             raise AccessError("La organización no está autorizada para este profesional.")
-        if professional.user_id.company_id != organization.company_id:
-            raise AccessError("El usuario del profesional debe tener la misma compañía principal que la clínica.")
+        if professional.company_id != organization.company_id:
+            raise AccessError("El profesional debe pertenecer a la compañía de la clínica.")
         if not self.label_name.strip():
             raise UserError("Indique una etiqueta que bloqueará la agenda.")
         if not 0 < self.default_duration_minutes <= 1440:
