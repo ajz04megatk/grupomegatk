@@ -49,8 +49,8 @@ class ODentalTodoistConnection(models.Model):
             if connection.professional_id.company_id != connection.organization_id.company_id:
                 raise ValidationError("La conexión debe permanecer dentro de la compañía del profesional.")
             if (not connection.professional_id.user_id or
-                    connection.professional_id.user_id.company_id != connection.company_id):
-                raise ValidationError("El usuario del profesional debe tener la misma compañía principal.")
+                    connection.company_id not in connection.professional_id.user_id.company_ids):
+                raise ValidationError("El usuario del profesional debe tener acceso a la compañía de la clínica.")
             if not 0 < connection.default_duration_minutes <= 1440:
                 raise ValidationError("La duración predeterminada debe estar entre 1 y 1440 minutos.")
             try:
@@ -64,8 +64,8 @@ class ODentalTodoistConnection(models.Model):
                 raise AccessError("Solo el profesional puede administrar su propia conexión Todoist.")
             if connection.company_id not in self.env.companies:
                 raise AccessError("Cambie a la compañía autorizada del profesional.")
-            if connection.professional_id.user_id.company_id != connection.company_id:
-                raise AccessError("El usuario del profesional no pertenece a la compañía principal de la clínica.")
+            if connection.company_id not in connection.professional_id.user_id.company_ids:
+                raise AccessError("El usuario del profesional no tiene acceso a la compañía de la clínica.")
 
     @api.model
     def _get_json(self, token, endpoint, params=None):
@@ -367,8 +367,8 @@ class ODentalTodoistConnection(models.Model):
             raise AccessError("La sincronización requiere el proceso autorizado de O Dental.")
         if not self.active or not self.api_token:
             return
-        if self.professional_id.user_id.company_id != self.company_id:
-            raise ValidationError("El usuario del profesional debe tener la misma compañía principal.")
+        if self.company_id not in self.professional_id.user_id.company_ids:
+            raise ValidationError("El usuario del profesional debe tener acceso a la compañía de la clínica.")
         tasks = self._fetch_tasks(self.api_token)
         # Reconcile only after every page succeeded: a partial response must
         # never cancel legitimate blocks.
