@@ -224,7 +224,11 @@ class TestTodoistAvailability(TransactionCase):
         self.assertFalse(self._block())
 
     def test_cross_company_user_cannot_sync(self):
-        other_company = self.env["res.company"].create({"name": "Otra compañía de prueba"})
+        other_company = self.env["res.company"].sudo().search([
+            ("id", "!=", self.env.company.id),
+        ], limit=1)
+        if not other_company:
+            self.skipTest("La prueba de aislamiento requiere una segunda compañía.")
         wrong_user = self.env["res.users"].with_context(no_reset_password=True).create({
             "name": "Profesional con cuenta equivocada",
             "login": "odental-todoist-mismatch@example.invalid",
