@@ -199,7 +199,7 @@ class ODentalTodoistConnection(models.Model):
             if current:
                 changed = {key: value for key, value in values.items() if current[key] != value}
                 if changed:
-                    current.write(changed)
+                    current.with_context(odental_skip_automatic_messages=True).write(changed)
             else:
                 appointments.create({
                     **values, "entry_type": "busy",
@@ -209,7 +209,9 @@ class ODentalTodoistConnection(models.Model):
                 })
         for task_id, current in existing.items():
             if task_id not in seen and current.state != "cancelled":
-                current.write({"state": "cancelled", "external_conflict": False})
+                current.with_context(odental_skip_automatic_messages=True).write(
+                    {"state": "cancelled", "external_conflict": False}
+                )
 
     def _export_marker(self, appointment):
         self.ensure_one()
