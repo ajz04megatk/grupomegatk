@@ -20,8 +20,10 @@ con nombre del paciente, servicio general y horario, sin expediente ni notas.
 4. Crear en Todoist una tarea con la etiqueta `@reunión` y fecha **con hora**.
    Si Todoist permite duración explícita, se respeta; en una cuenta sin esa
    función se usa la duración predeterminada (60 minutos, configurable).
-   Se importa como bloqueo privado al conectar y luego
-   aproximadamente cada dos minutos. También se puede pulsar **Actualizar ahora**.
+   Se importa como bloqueo privado al conectar y luego mediante una tarea
+   programada. En Odoo.sh no se puede prometer una ejecución más frecuente que
+   cada cinco minutos; staging puede tardar más si nadie usa la base.
+   También se puede pulsar **Actualizar ahora**.
 
 Al completar, eliminar o quitar la etiqueta, el siguiente sondeo cancela el
 bloqueo en O Dental y libera el horario. Al cambiar hora o duración, mueve el
@@ -41,6 +43,14 @@ respuestas incompletas mantienen los bloqueos anteriores y dejan un estado de
 error en **Mi disponibilidad Todoist**; el horario requiere revisión hasta que
 se restablezca la sincronización. **Desconectar** borra el token almacenado y
 libera los bloqueos de esa conexión, con confirmación visible.
+
+Por defecto solo se exportan las citas del paciente sintético seleccionado.
+El campo administrativo `export_all_patients` permite una activación posterior
+para todas las citas de ese profesional y organización. Antes de activarlo hay
+que validar conflictos y cancelaciones, obtener confirmación específica para
+enviar nombres y servicios generales de pacientes reales al Todoist del
+profesional y confirmar la identidad y acceso de la cuenta. No se activa al
+actualizar el módulo.
 
 ## Prueba de aceptación
 
