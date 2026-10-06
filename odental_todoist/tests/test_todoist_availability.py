@@ -291,11 +291,11 @@ class TestTodoistAvailability(TransactionCase):
         remote = {"id": "mirror-return", "content": original["content"],
                   "description": original["description"], "labels": ["reunión", "odental"],
                   "due": {"datetime": self._future_start(18).isoformat() + "Z"}}
-        with patch.object(type(self.connection), "_send_json", return_value=None):
+        with patch.object(type(self.connection), "_send_json", return_value={"id": "mirror-second"}):
             self.assertTrue(self.connection._reconcile_exports([remote]))
         self.assertTrue(appointment.external_conflict)
         remote["due"]["datetime"] = self._future_start().isoformat() + "Z"
-        with patch.object(type(self.connection), "_send_json", return_value=None):
+        with patch.object(type(self.connection), "_send_json", return_value={"id": "mirror-second"}):
             self.assertFalse(self.connection._reconcile_exports([remote]))
         self.assertFalse(appointment.external_conflict)
         self.assertEqual(appointment.start_datetime, self._future_start())
