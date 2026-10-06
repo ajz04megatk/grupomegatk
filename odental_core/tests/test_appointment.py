@@ -1,15 +1,18 @@
 from datetime import datetime, timedelta
+from lxml import etree
 
 from odoo.exceptions import AccessError, ValidationError
-from odoo.tests.common import TransactionCase
+from odoo.tests.common import TransactionCase, tagged
+from odoo.tools.safe_eval import safe_eval
 
 
+@tagged("post_install", "-at_install")
 class TestODentalAppointment(TransactionCase):
     @classmethod
     def _partner_compatible_values(cls, **values):
         """Supply defaults required by optional Grupo Mega partner extensions."""
         if "autopost_bills" in cls.env["res.partner"]._fields:
-            values.setdefault("autopost_bills", False)
+            values.setdefault("autopost_bills", "never")
         return values
 
     @classmethod
@@ -34,8 +37,13 @@ class TestODentalAppointment(TransactionCase):
                 login="supervisor.shift@test.invalid",
             )
         )
-        cls.organization.write({
-            "user_ids": [(4, cls.second_user.id), (4, cls.supervisor_user.id)]
+        # Install-time tests run as the archived superuser. Include that owner
+        # when the many-to-many authorization list is read by the constraint.
+        cls.organization.with_context(active_test=False).write({
+            "user_ids": [(6, 0, (
+                cls.organization.user_ids | cls.organization.owner_user_id
+                | cls.env.user | cls.second_user | cls.supervisor_user
+            ).ids)]
         })
         cls.second_professional = cls.env["odental.professional"].create({
             "name": "Dr. Segundo",
@@ -88,6 +96,87 @@ class TestODentalAppointment(TransactionCase):
                 for user, role in participants
             ]
         return values
+
+    def _other_clinic_booking(self, start):
+        operator = self.env['res.users'].with_context(no_reset_password=True).create(
+            self._partner_compatible_values(
+                name='Synthetic other clinic receptionist', login='dental-other-clinic-test',
+                company_id=self.env.company.id, company_ids=[(6, 0, self.env.company.ids)],
+                groups_id=[(6, 0, [self.env.ref('base.group_user').id,
+                    self.env.ref('odental_core.group_odental_user').id])]))
+        organization = self.env['odental.organization'].create({
+            'name': 'Synthetic other clinic', 'code': 'OTHER-TEST',
+            'owner_user_id': operator.id, 'user_ids': [(4, operator.id)]})
+        professional = self.env['odental.professional'].create({
+            'name': 'Synthetic other clinician', 'organization_ids': [(4, organization.id)]})
+        patient = self.env['odental.patient'].create({
+            'name': 'Synthetic other patient', 'organization_id': organization.id})
+        service = self.env['odental.service'].create({
+            'name': 'Synthetic appointment', 'code': 'OTHER', 'organization_id': organization.id,
+            'duration_minutes': 30, 'preparation_minutes': 5, 'cleaning_minutes': 10})
+        self.site.shared_with_organization_ids = [(4, organization.id)]
+        (self.room | self.chair).write({'shared_with_organization_ids': [(4, organization.id)]})
+        values = self._appointment_values(start, professional=professional)
+        values.update(organization_id=organization.id, patient_id=patient.id, service_id=service.id)
+        return self.env['odental.appointment'].with_user(operator), values
+
+    def test_shared_room_conflict_is_detected_without_exposing_other_patient(self):
+        start = datetime(2026, 9, 14, 14, 0)
+        first = self.env['odental.appointment'].create(self._appointment_values(start))
+        appointments, values = self._other_clinic_booking(start)
+        with self.assertRaises(AccessError):
+            first.with_user(appointments.env.user).read(['patient_id'])
+        with self.assertRaisesRegex(ValidationError, 'recursos'), self.env.cr.savepoint():
+            appointments.create(values)
+
+    def test_shared_room_can_be_reserved_after_cleaning(self):
+        start = datetime(2026, 9, 14, 14, 0)
+        self.env['odental.appointment'].create(self._appointment_values(start))
+        appointments, values = self._other_clinic_booking(start + timedelta(minutes=45))
+        second = appointments.create(values)
+        self.assertEqual(second.state, 'confirmed')
+
+    def test_shared_room_cancelled_booking_releases_availability(self):
+        start = datetime(2026, 9, 14, 14, 0)
+        first = self.env['odental.appointment'].create(self._appointment_values(start))
+        first.action_cancel()
+        appointments, values = self._other_clinic_booking(start)
+        second = appointments.create(values)
+        self.assertEqual(second.state, 'confirmed')
+
+    def test_shared_professional_conflict_across_private_clinics(self):
+        start = datetime(2026, 9, 14, 14, 0)
+        self.env['odental.appointment'].create(self._appointment_values(start))
+        appointments, values = self._other_clinic_booking(start)
+        self.professional.organization_ids = [(4, values['organization_id'])]
+        self.second_room.shared_with_organization_ids = [(4, values['organization_id'])]
+        values.update(professional_id=self.professional.id,
+                      resource_ids=[(6, 0, self.second_room.ids)])
+        with self.assertRaisesRegex(ValidationError, 'profesional'), self.env.cr.savepoint():
+            appointments.create(values)
+
+    def test_shared_assistant_conflict_across_private_clinics(self):
+        start = datetime(2026, 9, 14, 14, 0)
+        self.env['odental.appointment'].create(self._appointment_values(
+            start, participants=[(self.second_user, 'assistant')]))
+        appointments, values = self._other_clinic_booking(start)
+        organization = self.env['odental.organization'].browse(values['organization_id'])
+        organization.user_ids = [(4, self.second_user.id)]
+        self.second_room.shared_with_organization_ids = [(4, organization.id)]
+        values.update(resource_ids=[(6, 0, self.second_room.ids)],
+                      participant_line_ids=[(0, 0, {'user_id': self.second_user.id, 'role': 'assistant'})])
+        with self.assertRaisesRegex(ValidationError, 'operador o asistente'), self.env.cr.savepoint():
+            appointments.create(values)
+
+    def test_reception_form_offers_authorized_shared_resources(self):
+        appointments, values = self._other_clinic_booking(datetime(2026, 9, 14, 14, 0))
+        arch = etree.fromstring(appointments.get_view(view_type='form')['arch'])
+        context = {'organization_id': values['organization_id'], 'site_id': self.site.id}
+        for field, model, expected in [('site_id', 'odental.site', self.site),
+                                       ('resource_ids', 'odental.resource', self.room)]:
+            domain = safe_eval(arch.xpath('//field[@name="%s"]' % field)[0].get('domain'), context)
+            options = appointments.env[model].search(domain)
+            self.assertIn(expected.id, options.ids)
 
     def test_service_defaults_and_blocking_window(self):
         start = datetime(2026, 9, 14, 14, 0)
@@ -183,6 +272,7 @@ class TestODentalAppointment(TransactionCase):
             {
                 "resource_id": equipment.id,
                 "receiver_partner_id": receiver.id,
+                "delivered_at": datetime(2026, 9, 18, 8, 0),
                 "checkout_condition": "good",
                 "checkout_notes": "Se entrega sin daños visibles.",
             }
@@ -220,7 +310,8 @@ class TestODentalAppointment(TransactionCase):
     def test_allow_adjacent_appointment_after_cleaning(self):
         start = datetime(2026, 9, 14, 14, 0)
         self.env["odental.appointment"].create(self._appointment_values(start))
-        second = self.env["odental.appointment"].create(self._appointment_values(start + timedelta(minutes=40)))
+        # Include preparation of the next appointment after the first cleaning.
+        second = self.env["odental.appointment"].create(self._appointment_values(start + timedelta(minutes=45)))
         self.assertTrue(second)
 
     def test_fixed_room_selects_professional_and_operator(self):
