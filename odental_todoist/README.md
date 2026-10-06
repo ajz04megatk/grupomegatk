@@ -52,6 +52,13 @@ enviar nombres y servicios generales de pacientes reales al Todoist del
 profesional y confirmar la identidad y acceso de la cuenta. No se activa al
 actualizar el módulo.
 
+El receptor `/odental/todoist/webhook` está inactivo mientras no se configure
+`odental_todoist.webhook_client_secret` con el secreto de una aplicación Todoist
+registrada. Comprueba HMAC y el ID del titular, consulta de nuevo Todoist y
+conserva el sondeo como respaldo. Jennifer debe autorizar esa aplicación por
+OAuth para que Todoist envíe eventos; su token personal no activa avisos. No
+registrar ni autorizar una aplicación desde una cuenta ajena a la titular.
+
 ## Prueba de aceptación
 
 - Crear tarea de prueba 10:00–11:00 con etiqueta `@reunión`; actualizar y
