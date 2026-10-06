@@ -1,3 +1,6 @@
+import base64
+import hashlib
+import hmac
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
@@ -5,9 +8,21 @@ from odoo import fields
 from odoo.exceptions import UserError, ValidationError
 from odoo.tests.common import TransactionCase, tagged
 
+from ..controllers.webhook import valid_signature
+
 
 @tagged("post_install", "-at_install")
 class TestTodoistAvailability(TransactionCase):
+    def test_webhook_signature_rejects_forgery_and_modified_payload(self):
+        body = b'{"event_name":"item:updated","user_id":"doctor-1"}'
+        signature = base64.b64encode(hmac.new(
+            b"synthetic-secret", body, hashlib.sha256,
+        ).digest()).decode()
+        self.assertTrue(valid_signature("synthetic-secret", body, signature))
+        self.assertFalse(valid_signature("synthetic-secret", body + b" ", signature))
+        self.assertFalse(valid_signature("another-secret", body, signature))
+        self.assertFalse(valid_signature("", body, signature))
+
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
@@ -190,6 +205,28 @@ class TestTodoistAvailability(TransactionCase):
             ("appointment_id", "=", real_appointment.id),
         ]))
 
+    def test_full_scope_requires_explicit_setting_and_stays_in_clinic(self):
+        real_patient = self.env["odental.patient"].create({
+            "name": "Paciente de activación", "organization_id": self.organization.id,
+        })
+        appointment = self.env["odental.appointment"].create({
+            **self._clinical_values(self._future_start()), "patient_id": real_patient.id,
+        })
+        self.assertFalse(self.connection.export_all_patients)
+        with patch.object(type(self.connection), "_send_json") as send:
+            self.connection._reconcile_exports([])
+            send.assert_not_called()
+        self.connection.export_all_patients = True
+        with patch.object(type(self.connection), "_send_json", return_value={"id": "real-mirror"}) as send:
+            self.connection._reconcile_exports([])
+        self.assertEqual(send.call_args.args[3]["content"].split(" · ")[0],
+                         f"Atender a {real_patient.name}")
+        mirror = self.env["odental.todoist.mirror"].sudo().search([
+            ("appointment_id", "=", appointment.id),
+            ("connection_id", "=", self.connection.id),
+        ])
+        self.assertEqual(mirror.task_id, "real-mirror")
+
     def test_pilot_patient_must_belong_to_clinic(self):
         second = self.env["odental.organization"].create({
             "name": "Otra clínica", "code": "PILOT-OTHER",
@@ -242,6 +279,26 @@ class TestTodoistAvailability(TransactionCase):
         self.assertTrue(appointment.external_conflict)
         self.assertEqual(appointment.start_datetime, self._future_start())
         self.assertFalse(any(call.args[2] == "tasks/mirror-3" for call in send.call_args_list))
+
+    def test_conflict_clears_when_doctor_restores_original_time(self):
+        appointment = self.env["odental.appointment"].create(
+            self._clinical_values(self._future_start())
+        )
+        with patch.object(type(self.connection), "_send_json", return_value={"id": "mirror-return"}):
+            self.connection._reconcile_exports([])
+        self.env["odental.appointment"].create(self._clinical_values(self._future_start(18)))
+        original = self.connection._export_payload(appointment)
+        remote = {"id": "mirror-return", "content": original["content"],
+                  "description": original["description"], "labels": ["reunión", "odental"],
+                  "due": {"datetime": self._future_start(18).isoformat() + "Z"}}
+        with patch.object(type(self.connection), "_send_json", return_value={"id": "mirror-second"}):
+            self.assertTrue(self.connection._reconcile_exports([remote]))
+        self.assertTrue(appointment.external_conflict)
+        remote["due"]["datetime"] = self._future_start().isoformat() + "Z"
+        with patch.object(type(self.connection), "_send_json", return_value={"id": "mirror-second"}):
+            self.assertFalse(self.connection._reconcile_exports([remote]))
+        self.assertFalse(appointment.external_conflict)
+        self.assertEqual(appointment.start_datetime, self._future_start())
 
     def test_clinical_mirror_never_reimports_as_meeting(self):
         appointment = self.env["odental.appointment"].create(
