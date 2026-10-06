@@ -427,6 +427,12 @@ class ODentalTodoistConnection(models.Model):
         for connection in self.sudo().search([("active", "=", True)]):
             try:
                 with self.env.cr.savepoint():
+                    self.env.cr.execute(
+                        "SELECT pg_try_advisory_xact_lock(%s, %s)",
+                        (768802, connection.id),
+                    )
+                    if not self.env.cr.fetchone()[0]:
+                        continue
                     connection._sync_one()
             except Exception:  # One failed account must not block other clinics.
                 connection.sudo().write({"last_error": "Todoist no se actualizó; revise la conexión."})
