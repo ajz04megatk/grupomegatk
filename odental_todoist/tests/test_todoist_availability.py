@@ -1,3 +1,6 @@
+import base64
+import hashlib
+import hmac
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
@@ -5,9 +8,21 @@ from odoo import fields
 from odoo.exceptions import UserError, ValidationError
 from odoo.tests.common import TransactionCase, tagged
 
+from ..controllers.webhook import valid_signature
+
 
 @tagged("post_install", "-at_install")
 class TestTodoistAvailability(TransactionCase):
+    def test_webhook_signature_rejects_forgery_and_modified_payload(self):
+        body = b'{"event_name":"item:updated","user_id":"doctor-1"}'
+        signature = base64.b64encode(hmac.new(
+            b"synthetic-secret", body, hashlib.sha256,
+        ).digest()).decode()
+        self.assertTrue(valid_signature("synthetic-secret", body, signature))
+        self.assertFalse(valid_signature("synthetic-secret", body + b" ", signature))
+        self.assertFalse(valid_signature("another-secret", body, signature))
+        self.assertFalse(valid_signature("", body, signature))
+
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
