@@ -26,6 +26,12 @@ class ODentalTodoistConnection(models.Model):
         "odental.patient", string="Paciente de prueba", required=True, ondelete="restrict",
         help="Durante el piloto solo se publican en Todoist las citas de este paciente.",
     )
+    export_all_patients = fields.Boolean(
+        string="Publicar citas de todos los pacientes",
+        default=False,
+        groups="base.group_system",
+        help="Solo para activación clínica autorizada. Envía nombre, servicio general y horario a Todoist.",
+    )
     company_id = fields.Many2one(related="organization_id.company_id", store=True, index=True)
     # The user enters this through the short-lived wizard. Only the superuser
     # running the sync can read the stored credential, never clinical staff.
@@ -290,22 +296,24 @@ class ODentalTodoistConnection(models.Model):
             odental_audit_source="todoist",
             odental_audit_actor_user_id=self.professional_id.user_id.id,
         )
-        active = appointments.search([
+        domain = [
             ("entry_type", "=", "clinical"),
             ("active", "=", True),
             ("organization_id", "=", self.organization_id.id),
             ("professional_id", "=", self.professional_id.id),
-            ("patient_id", "=", self.pilot_patient_id.id),
             ("state", "in", ("scheduled", "confirmed", "in_progress")),
             ("start_datetime", ">=", fields.Datetime.now() - timedelta(days=1)),
-        ])
+        ]
+        if not self.export_all_patients:
+            domain.append(("patient_id", "=", self.pilot_patient_id.id))
+        active = appointments.search(domain)
         # A previously published visit can be moved from an old date in
         # Todoist; retain its mirror in the reconciliation until retired.
         active |= appointments.browse(list(existing)).filtered(lambda appointment:
             appointment.active and appointment.entry_type == "clinical"
             and appointment.organization_id == self.organization_id
             and appointment.professional_id == self.professional_id
-            and appointment.patient_id == self.pilot_patient_id
+            and (self.export_all_patients or appointment.patient_id == self.pilot_patient_id)
             and appointment.state in ("scheduled", "confirmed", "in_progress"))
         remote_by_id = {str(task.get("id")): task for task in tasks if isinstance(task, dict) and task.get("id")}
         remote_by_marker = {
@@ -333,6 +341,12 @@ class ODentalTodoistConnection(models.Model):
                         appointment.write({"external_conflict": True})
                         conflicts = True
                         continue  # Keep the doctor's edit for manual conflict resolution.
+                    appointment.write({"external_conflict": False})
+                elif (appointment.external_conflict and mirror and mirror.synced_start
+                      and interval and interval[0] == mirror.synced_start
+                      and (not remote.get("duration") or interval[1] == mirror.synced_duration)):
+                    # The doctor restored the last accepted time after a
+                    # rejected move. The conflict is no longer outstanding.
                     appointment.write({"external_conflict": False})
                 payload = self._export_payload(appointment)
                 explicit_duration = remote.get("duration") or {}
