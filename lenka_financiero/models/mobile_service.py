@@ -189,6 +189,7 @@ class LenkaMobileService(models.AbstractModel):
         investment = self.env['lenka.investment'].sudo().search([
             ('id', '=', int(investment_id)),
             ('partner_id', 'child_of', partner.id),
+            ('state', 'in', ('active', 'matured', 'closed')),
         ], limit=1)
         if not investment:
             raise AccessError(_('La inversion solicitada no pertenece al usuario autenticado.'))
@@ -213,7 +214,9 @@ class LenkaMobileService(models.AbstractModel):
                 'rate': line.rate,
                 'amount': line.amount,
                 'state': line.state,
-            } for line in investment.interest_line_ids.sorted('period_date', reverse=True)],
+            } for line in investment.interest_line_ids.filtered(
+                lambda line: line.state in ('accrued', 'paid')
+            ).sorted('period_date', reverse=True)],
             'withdrawals': [{
                 'date': fields.Date.to_string(withdrawal.date),
                 'principal_amount': withdrawal.principal_amount,
