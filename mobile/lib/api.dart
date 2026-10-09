@@ -1,0 +1,162 @@
+import 'dart:convert';
+import 'dart:io';
+
+class LenkaFailure implements Exception {
+  const LenkaFailure(this.message, {this.sessionExpired = false});
+  final String message;
+  final bool sessionExpired;
+}
+
+abstract class SavingsRepository {
+  Future<void> login(String email, String password);
+  Future<List<Map<String, dynamic>>> investments();
+  Future<Map<String, dynamic>> detail(int id);
+  void logout();
+}
+
+/// In-memory session only. No passwords, tokens or balances written to disk.
+class OdooSavingsRepository implements SavingsRepository {
+  OdooSavingsRepository(this.origin, this.database) {
+    if (origin.scheme != 'https' ||
+        origin.host.isEmpty ||
+        origin.userInfo.isNotEmpty ||
+        origin.hasQuery ||
+        origin.hasFragment ||
+        (origin.path.isNotEmpty && origin.path != '/') ||
+        database.isEmpty) {
+      throw ArgumentError('Se requiere el servidor HTTPS de Lenka y su base.');
+    }
+  }
+  final Uri origin;
+  final String database;
+  final HttpClient _client = HttpClient()
+    ..connectionTimeout = const Duration(seconds: 15);
+  String? _session;
+  int _generation = 0;
+
+  Future<dynamic> _call(
+    String path,
+    Map<String, dynamic> params, {
+    bool authenticate = false,
+  }) async {
+    final generation = _generation;
+    HttpClientRequest? request;
+    try {
+      if (!authenticate && _session == null) {
+        throw const LenkaFailure('Ingresá nuevamente.', sessionExpired: true);
+      }
+      request = await _client
+          .postUrl(origin.resolve(path))
+          .timeout(const Duration(seconds: 15));
+      request.followRedirects = false;
+      request.headers.contentType = ContentType.json;
+      if (_session != null)
+        request.cookies.add(Cookie('session_id', _session!));
+      request.write(
+        jsonEncode({
+          'jsonrpc': '2.0',
+          'method': 'call',
+          'id': 1,
+          'params': params,
+        }),
+      );
+      final response = await request.close().timeout(
+        const Duration(seconds: 20),
+      );
+      if (generation != _generation)
+        throw const LenkaFailure('Sesión cerrada.');
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        logout();
+        throw const LenkaFailure(
+          'Ingresá nuevamente o consultá a Lenka para habilitar tu acceso.',
+          sessionExpired: true,
+        );
+      }
+      if (response.statusCode != 200) {
+        throw const LenkaFailure(
+          'No pudimos consultar Lenka. Intentá nuevamente.',
+        );
+      }
+      final body = await utf8.decoder
+          .bind(response)
+          .join()
+          .timeout(const Duration(seconds: 20));
+      if (generation != _generation)
+        throw const LenkaFailure('Sesión cerrada.');
+      final envelope = jsonDecode(body) as Map<String, dynamic>;
+      if (envelope['error'] != null) {
+        final error = envelope['error'];
+        final name = error is Map
+            ? (error['data'] is Map ? error['data']['name'] : null)
+            : null;
+        if (name == 'odoo.http.SessionExpiredException') {
+          logout();
+          throw const LenkaFailure(
+            'Tu sesión venció. Ingresá nuevamente.',
+            sessionExpired: true,
+          );
+        }
+        throw LenkaFailure(
+          authenticate
+              ? 'No pudimos ingresar. Revisá tus datos y que Lenka haya habilitado tu cuenta.'
+              : 'No pudimos consultar tu información. Contactá a Lenka si el problema continúa.',
+        );
+      }
+      if (!envelope.containsKey('result')) throw const FormatException();
+      if (authenticate) {
+        final result = envelope['result'];
+        if (result is! Map || result['uid'] is! int) {
+          throw const LenkaFailure('Correo o contraseña incorrectos.');
+        }
+        for (final cookie in response.cookies) {
+          if (cookie.name == 'session_id' && cookie.value.isNotEmpty) {
+            _session = cookie.value;
+          }
+        }
+        if (_session == null)
+          throw const LenkaFailure('No se pudo abrir una sesión segura.');
+      }
+      return envelope['result'];
+    } on LenkaFailure {
+      rethrow;
+    } catch (_) {
+      request?.abort();
+      throw const LenkaFailure(
+        'No pudimos conectar. Revisá tu conexión y volvé a intentar.',
+      );
+    }
+  }
+
+  @override
+  Future<void> login(String email, String password) async {
+    logout();
+    await _call('/web/session/authenticate', {
+      'db': database,
+      'login': email.trim(),
+      'password': password,
+    }, authenticate: true);
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> investments() async {
+    final data = await _call('/lenka/mobile/v1/investments', {});
+    if (data is! List)
+      throw const LenkaFailure('La respuesta de Lenka no es válida.');
+    return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  @override
+  Future<Map<String, dynamic>> detail(int id) async {
+    if (id <= 0) throw ArgumentError.value(id);
+    final data = await _call('/lenka/mobile/v1/investments/$id', {});
+    if (data is! Map)
+      throw const LenkaFailure('La respuesta de Lenka no es válida.');
+    return Map<String, dynamic>.from(data);
+  }
+
+  @override
+  void logout() {
+    _generation++;
+    _session = null;
+  }
+}
