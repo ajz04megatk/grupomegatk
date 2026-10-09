@@ -1,5 +1,6 @@
 from odoo import api, fields, models, _
 from odoo.exceptions import AccessError
+from .mobile_totals import summarize_by_currency
 
 
 class LenkaMobileService(models.AbstractModel):
@@ -48,17 +49,19 @@ class LenkaMobileService(models.AbstractModel):
                 'email': partner.email or '',
                 'phone': partner.phone or partner.mobile or '',
             },
-            'operations': {
-                'count': len(operations),
-                'outstanding_capital': sum(operations.mapped('outstanding_capital')),
-                'paid_interest': sum(operations.mapped('paid_interest')),
-                'paid_late_fees': sum(operations.mapped('paid_late_fees')),
-            },
-            'investments': {
-                'count': len(investments),
-                'outstanding_principal': sum(investments.mapped('outstanding_principal')),
-                'accrued_interest': sum(investments.mapped('accrued_interest')),
-            },
+            'operations': summarize_by_currency([{
+                'currency': rec.currency_id.name,
+                'outstanding_capital': rec.outstanding_capital,
+                'paid_interest': rec.paid_interest,
+                'paid_late_fees': rec.paid_late_fees,
+            } for rec in operations], (
+                'outstanding_capital', 'paid_interest', 'paid_late_fees')),
+            'investments': summarize_by_currency([{
+                'currency': rec.currency_id.name,
+                'outstanding_principal': rec.outstanding_principal,
+                'accrued_interest': rec.accrued_interest,
+            } for rec in investments], (
+                'outstanding_principal', 'accrued_interest')),
             'recent_statements': [{
                 'id': statement.id,
                 'name': statement.name,
