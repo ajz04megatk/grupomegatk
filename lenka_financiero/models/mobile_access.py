@@ -5,6 +5,21 @@ from odoo.exceptions import AccessError, ValidationError
 class ResPartnerLenkaMobile(models.Model):
     _inherit = 'res.partner'
 
+    def _check_mobile_manager(self):
+        if not self.env.su and not self.env.user.has_group('lenka_financiero.group_lenka_manager'):
+            raise AccessError(_('Solo un gerente de Lenka puede habilitar o deshabilitar el acceso movil.'))
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        if any('lenka_mobile_enabled' in vals or 'lenka_mobile_enabled_date' in vals for vals in vals_list):
+            self._check_mobile_manager()
+        return super().create(vals_list)
+
+    def write(self, vals):
+        if {'lenka_mobile_enabled', 'lenka_mobile_enabled_date'}.intersection(vals):
+            self._check_mobile_manager()
+        return super().write(vals)
+
     lenka_mobile_enabled = fields.Boolean(
         string='Acceso App Financiero Lenka',
         tracking=True,
@@ -24,6 +39,7 @@ class ResPartnerLenkaMobile(models.Model):
             partner.lenka_mobile_user_id = user
 
     def action_enable_lenka_mobile(self):
+        self._check_mobile_manager()
         group = self.env.ref('lenka_financiero.group_lenka_mobile_client')
         portal_group = self.env.ref('base.group_portal')
         Users = self.env['res.users'].sudo()
@@ -40,7 +56,11 @@ class ResPartnerLenkaMobile(models.Model):
                     'groups_id': [(6, 0, [portal_group.id, group.id])],
                 })
             else:
-                user.write({'groups_id': [(4, portal_group.id), (4, group.id)]})
+                # An internal operator must not be assigned the incompatible portal role.
+                groups = [(4, group.id)]
+                if user.share:
+                    groups.append((4, portal_group.id))
+                user.write({'groups_id': groups})
             partner.write({
                 'lenka_mobile_enabled': True,
                 'lenka_mobile_enabled_date': fields.Datetime.now(),
@@ -48,6 +68,7 @@ class ResPartnerLenkaMobile(models.Model):
         return True
 
     def action_disable_lenka_mobile(self):
+        self._check_mobile_manager()
         group = self.env.ref('lenka_financiero.group_lenka_mobile_client')
         for partner in self:
             user = self.env['res.users'].sudo().search([('partner_id', '=', partner.id)], limit=1)
