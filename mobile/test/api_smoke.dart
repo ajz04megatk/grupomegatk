@@ -20,7 +20,7 @@ Future<void> main() async {
     Uri.parse('https://example.invalid'),
     'test',
   );
-  repository.logout();
+  await repository.logout();
   try {
     await repository.investments();
     throw StateError('Read allowed without a session');
