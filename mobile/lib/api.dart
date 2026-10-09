@@ -11,7 +11,8 @@ abstract class SavingsRepository {
   Future<void> login(String email, String password);
   Future<List<Map<String, dynamic>>> investments();
   Future<Map<String, dynamic>> detail(int id);
-  void logout();
+  Future<void> logout();
+  Future<List<Map<String, dynamic>>> statements();
 }
 
 /// In-memory session only. No passwords, tokens or balances written to disk.
@@ -129,7 +130,7 @@ class OdooSavingsRepository implements SavingsRepository {
 
   @override
   Future<void> login(String email, String password) async {
-    logout();
+    await logout();
     await _call('/web/session/authenticate', {
       'db': database,
       'login': email.trim(),
@@ -142,6 +143,9 @@ class OdooSavingsRepository implements SavingsRepository {
     final data = await _call('/lenka/mobile/v1/investments', {});
     if (data is! List)
       throw const LenkaFailure('La respuesta de Lenka no es válida.');
+    if (data.any((row) => row is! Map)) {
+      throw const LenkaFailure('No pudimos leer tus depósitos.');
+    }
     return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
@@ -155,8 +159,40 @@ class OdooSavingsRepository implements SavingsRepository {
   }
 
   @override
-  void logout() {
+  Future<void> logout() async {
+    final session = _session;
     _generation++;
     _session = null;
+    if (session == null) return;
+    // Separate client: late logout must never overwrite a newly opened session.
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
+    try {
+      final request = await client
+          .postUrl(origin.resolve('/web/session/destroy'))
+          .timeout(const Duration(seconds: 5));
+      request.followRedirects = false;
+      request.headers.contentType = ContentType.json;
+      request.cookies.add(Cookie('session_id', session));
+      request.write(
+        jsonEncode({'jsonrpc': '2.0', 'method': 'call', 'id': 1, 'params': {}}),
+      );
+      final response = await request.close().timeout(
+        const Duration(seconds: 5),
+      );
+      await response.drain<void>().timeout(const Duration(seconds: 5));
+    } catch (_) {
+      // Local session is already discarded even when offline. Server expiry still applies.
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> statements() async {
+    final data = await _call('/lenka/mobile/v1/statements', {});
+    if (data is! List || data.any((row) => row is! Map)) {
+      throw const LenkaFailure('No pudimos leer tus estados de cuenta.');
+    }
+    return data.map((row) => Map<String, dynamic>.from(row as Map)).toList();
   }
 }
