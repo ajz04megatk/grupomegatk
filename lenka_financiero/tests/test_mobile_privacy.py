@@ -45,3 +45,23 @@ class TestMobilePrivacy(TransactionCase):
             record = self.investment(self.client, state)
             with self.assertRaises(AccessError):
                 service.get_my_investment_detail(record.id)
+
+    def test_child_contact_does_not_inherit_parent_deposits(self):
+        child = self.env['res.partner'].create({'name': 'Contact child', 'parent_id': self.client.id})
+        record = self.investment(child)
+        with self.assertRaises(AccessError):
+            self.env['lenka.mobile.service'].with_user(self.user).get_my_investment_detail(record.id)
+
+    def test_deposit_in_unauthorized_company_is_hidden(self):
+        company = self.env['res.company'].create({'name': 'Private other company'})
+        record = self.investment(self.client)
+        record.company_id = company
+        with self.assertRaises(AccessError):
+            self.env['lenka.mobile.service'].with_user(self.user).get_my_investment_detail(record.id)
+
+    def test_client_cannot_enable_own_mobile_access(self):
+        partner = self.client.with_user(self.user)
+        with self.assertRaises(AccessError):
+            partner.action_enable_lenka_mobile()
+        with self.assertRaises(AccessError):
+            partner.write({'lenka_mobile_enabled': True})
