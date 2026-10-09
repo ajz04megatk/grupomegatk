@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'statements.dart';
 
 void main() {
   const host = String.fromEnvironment('LENKA_ORIGIN');
@@ -32,6 +33,8 @@ class LenkaApp extends StatelessWidget {
   final SavingsRepository? repository;
   @override
   Widget build(BuildContext context) => MaterialApp(
+    builder: (context, child) =>
+        PrivacyCover(child: child ?? const SizedBox.shrink()),
     title: 'Lenka',
     debugShowCheckedModeBanner: false,
     theme: ThemeData(
@@ -213,6 +216,15 @@ class _SavingsPageState extends State<SavingsPage> {
       title: const Text('Mis ahorros'),
       automaticallyImplyLeading: false,
       actions: [
+        IconButton(
+          tooltip: 'Estados de cuenta',
+          icon: const Icon(Icons.receipt_long),
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => StatementsPage(repository: widget.repository),
+            ),
+          ),
+        ),
         IconButton(
           tooltip: 'Actualizar',
           onPressed: busy ? null : refresh,
