@@ -26,9 +26,8 @@ Se utiliza sesión Odoo autenticada vía HTTPS, solo en memoria. Debe probarse
 contra un usuario portal móvil en staging, incluido el acceso revocado.
 No habilitar usuarios reales hasta completar pruebas de aislamiento de empresa
 y contacto, expiración, compatibilidad 2FA y recuperación de contraseña.
-Cerrar sesión elimina la sesión local; todavía falta revocación remota de sesión.
-Tampoco se ha implementado biometría, bloqueo al pasar a segundo plano,
-estados de cuenta ni distribución en tiendas.
+Cerrar sesión elimina de inmediato la sesión local e intenta revocarla en Odoo con un tiempo de espera limitado. Si no hay conexión, no se afirma que la revocación remota haya ocurrido.
+Se añadieron estados de cuenta emitidos y una cubierta de privacidad al pasar a segundo plano. No equivale a bloquear capturas del sistema operativo. Faltan biometría, bloqueo por inactividad y distribución en tiendas.
 
 ## Verificaciones
 
