@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lenka_clientes/api.dart';
 import 'package:lenka_clientes/main.dart';
+import 'package:lenka_clientes/statements.dart';
 
 class FakeRepository implements SavingsRepository {
   int logouts = 0;
@@ -9,7 +10,7 @@ class FakeRepository implements SavingsRepository {
   @override
   Future<void> login(String email, String password) async {}
   @override
-  void logout() {
+  Future<void> logout() async {
     logouts++;
   }
 
@@ -34,6 +35,8 @@ class FakeRepository implements SavingsRepository {
     ];
   }
 
+  @override
+  Future<List<Map<String, dynamic>>> statements() async => [];
   @override
   Future<Map<String, dynamic>> detail(int id) async => {
     'name': 'Depósito A',
@@ -96,5 +99,26 @@ void main() {
     expect(find.text('Sin conexión'), findsOneWidget);
     expect(find.text('HNL 25,000.00'), findsNothing);
     expect(find.text('Volver a intentar'), findsOneWidget);
+  });
+  testWidgets('Statements show an honest empty state', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(home: StatementsPage(repository: FakeRepository())),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Todavía no tenés estados de cuenta emitidos.'),
+      findsOneWidget,
+    );
+  });
+  testWidgets('Backgrounding covers private financial content', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: PrivacyCover(child: Text('Private balance'))),
+    );
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    expect(find.text('Lenka · Tu información es privada'), findsOneWidget);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(find.text('Lenka · Tu información es privada'), findsNothing);
   });
 }
