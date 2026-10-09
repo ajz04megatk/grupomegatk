@@ -13,7 +13,7 @@ class LenkaMobileService(models.AbstractModel):
         partner = user.partner_id
         if not partner:
             raise AccessError(_('El usuario autenticado no tiene un contacto asociado.'))
-        commercial_partner = partner.commercial_partner_id
+        commercial_partner = partner
         if not user.has_group('lenka_financiero.group_lenka_mobile_client'):
             raise AccessError(_('El usuario no tiene habilitado el acceso a la app Financiero Lenka.'))
         if not commercial_partner.lenka_mobile_enabled:
@@ -23,22 +23,26 @@ class LenkaMobileService(models.AbstractModel):
     @api.model
     def _partner_domain(self, field_name='partner_id'):
         partner = self._current_partner()
-        return [(field_name, 'child_of', partner.id)]
+        return [(field_name, '=', partner.id),
+                ('company_id', 'in', self.env.user.company_ids.ids)]
 
     @api.model
     def get_my_dashboard(self):
         partner = self._current_partner()
         operations = self.env['lenka.financial.operation'].sudo().search([
-            ('partner_id', 'child_of', partner.id),
+            ('partner_id', '=', partner.id),
+            ('company_id', 'in', self.env.user.company_ids.ids),
             ('is_quote', '=', False),
             ('state', 'in', ('approved', 'contracted', 'active', 'done')),
         ])
         investments = self.env['lenka.investment'].sudo().search([
-            ('partner_id', 'child_of', partner.id),
+            ('partner_id', '=', partner.id),
+            ('company_id', 'in', self.env.user.company_ids.ids),
             ('state', 'in', ('active', 'matured', 'closed')),
         ])
         statements = self.env['lenka.statement'].sudo().search([
-            ('partner_id', 'child_of', partner.id),
+            ('partner_id', '=', partner.id),
+            ('company_id', 'in', self.env.user.company_ids.ids),
             ('state', 'in', ('generated', 'sent')),
         ], order='date_to desc', limit=5)
 
@@ -78,7 +82,8 @@ class LenkaMobileService(models.AbstractModel):
     def get_my_operations(self):
         partner = self._current_partner()
         operations = self.env['lenka.financial.operation'].sudo().search([
-            ('partner_id', 'child_of', partner.id),
+            ('partner_id', '=', partner.id),
+            ('company_id', 'in', self.env.user.company_ids.ids),
             ('is_quote', '=', False),
             ('state', 'not in', ('draft', 'review', 'rejected', 'cancelled')),
         ], order='date desc, id desc')
@@ -114,7 +119,8 @@ class LenkaMobileService(models.AbstractModel):
         partner = self._current_partner()
         operation = self.env['lenka.financial.operation'].sudo().search([
             ('id', '=', int(operation_id)),
-            ('partner_id', 'child_of', partner.id),
+            ('partner_id', '=', partner.id),
+            ('company_id', 'in', self.env.user.company_ids.ids),
             ('is_quote', '=', False),
         ], limit=1)
         if not operation:
@@ -162,7 +168,8 @@ class LenkaMobileService(models.AbstractModel):
     def get_my_investments(self):
         partner = self._current_partner()
         investments = self.env['lenka.investment'].sudo().search([
-            ('partner_id', 'child_of', partner.id),
+            ('partner_id', '=', partner.id),
+            ('company_id', 'in', self.env.user.company_ids.ids),
             ('state', 'not in', ('draft', 'cancelled')),
         ], order='start_date desc, id desc')
 
@@ -188,7 +195,8 @@ class LenkaMobileService(models.AbstractModel):
         partner = self._current_partner()
         investment = self.env['lenka.investment'].sudo().search([
             ('id', '=', int(investment_id)),
-            ('partner_id', 'child_of', partner.id),
+            ('partner_id', '=', partner.id),
+            ('company_id', 'in', self.env.user.company_ids.ids),
             ('state', 'in', ('active', 'matured', 'closed')),
         ], limit=1)
         if not investment:
@@ -231,7 +239,8 @@ class LenkaMobileService(models.AbstractModel):
     def get_my_statements(self):
         partner = self._current_partner()
         statements = self.env['lenka.statement'].sudo().search([
-            ('partner_id', 'child_of', partner.id),
+            ('partner_id', '=', partner.id),
+            ('company_id', 'in', self.env.user.company_ids.ids),
             ('state', 'in', ('generated', 'sent')),
         ], order='date_to desc, id desc')
 
