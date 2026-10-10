@@ -65,3 +65,24 @@ class TestMobilePrivacy(TransactionCase):
             partner.action_enable_lenka_mobile()
         with self.assertRaises(AccessError):
             partner.write({'lenka_mobile_enabled': True})
+
+    def test_unpublished_operations_are_hidden_even_by_id(self):
+        service = self.env['lenka.mobile.service'].with_user(self.user)
+        for state in ('draft', 'review', 'rejected', 'cancelled'):
+            operation = self.env['lenka.financial.operation'].create({
+                'partner_id': self.client.id, 'is_quote': False,
+                'principal_amount': 1000, 'interest_rate': 0,
+                'term_months': 12, 'state': state,
+            })
+            with self.assertRaises(AccessError):
+                service.get_my_operation_detail(operation.id)
+            self.assertNotIn(operation.id, [row['id'] for row in service.get_my_operations()])
+
+    def test_quotes_are_hidden_even_when_approved(self):
+        operation = self.env['lenka.financial.operation'].create({
+            'partner_id': self.client.id, 'is_quote': True,
+            'principal_amount': 1000, 'interest_rate': 0,
+            'term_months': 12, 'state': 'approved',
+        })
+        with self.assertRaises(AccessError):
+            self.env['lenka.mobile.service'].with_user(self.user).get_my_operation_detail(operation.id)
