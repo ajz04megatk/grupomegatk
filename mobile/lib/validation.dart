@@ -83,6 +83,7 @@ Map<String, dynamic> validateDepositDetail(dynamic value, int requestedId) {
 List<Map<String, dynamic>> validateStatements(dynamic value) =>
     _list(value, (row) {
       _identity(row);
+      if (!const {'investment', 'operation'}.contains(row['type'])) _invalid();
       if (!const {'generated', 'sent'}.contains(row['state'])) _invalid();
       _amount(row, 'opening_balance');
       _amount(row, 'closing_balance');
