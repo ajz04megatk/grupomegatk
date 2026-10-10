@@ -67,9 +67,14 @@ class FakeRepository implements SavingsRepository {
 
 class DelayedRepository extends FakeRepository {
   final authentication = Completer<void>();
+  int loginCalls = 0;
   final reads = <Completer<List<Map<String, dynamic>>>>[];
   @override
-  Future<void> login(String email, String password) => authentication.future;
+  Future<void> login(String email, String password) {
+    loginCalls++;
+    return authentication.future;
+  }
+
   @override
   Future<List<Map<String, dynamic>>> investments() {
     final result = Completer<List<Map<String, dynamic>>>();
@@ -83,7 +88,15 @@ Finder savingsScroll() => find.byWidgetPredicate(
       widget is Scrollable && widget.axisDirection == AxisDirection.down,
 );
 
+Future<void> pumpForegroundApp(WidgetTester tester, LenkaApp app) async {
+  // Widget tests start detached; a visible native app receives resumed first.
+  tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+  await tester.pumpWidget(app);
+  expect(find.text('Lenka · Tu información es privada'), findsNothing);
+}
+
 void main() {
+  WidgetController.hitTestWarningShouldBeFatal = true;
   testWidgets('Privacy cover starts closed if already in background', (
     tester,
   ) async {
@@ -103,7 +116,7 @@ void main() {
     tester,
   ) async {
     final repository = FakeRepository();
-    await tester.pumpWidget(LenkaApp(repository: repository));
+    await pumpForegroundApp(tester, LenkaApp(repository: repository));
     await tester.enterText(
       find.byType(TextField).first,
       'client@example.invalid',
@@ -122,7 +135,7 @@ void main() {
   testWidgets(
     'Login guides missing fields and masks password after backgrounding',
     (tester) async {
-      await tester.pumpWidget(LenkaApp(repository: FakeRepository()));
+      await pumpForegroundApp(tester, LenkaApp(repository: FakeRepository()));
       await tester.tap(find.text('Ingresar'));
       await tester.pumpAndSettle();
       expect(find.text('Escribí tu correo.'), findsOneWidget);
@@ -184,7 +197,8 @@ void main() {
   ) async {
     var elapsed = Duration.zero;
     final repository = FakeRepository();
-    await tester.pumpWidget(
+    await pumpForegroundApp(
+      tester,
       LenkaApp(repository: repository, elapsed: () => elapsed),
     );
     await tester.enterText(
@@ -204,7 +218,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
   testWidgets('Login displays the official Lenka asset', (tester) async {
-    await tester.pumpWidget(LenkaApp(repository: FakeRepository()));
+    await pumpForegroundApp(tester, LenkaApp(repository: FakeRepository()));
     await tester.pumpAndSettle();
     final image = tester.widget<Image>(find.byType(Image));
     expect(image.image, const AssetImage(LenkaBrand.iconAsset));
@@ -247,7 +261,7 @@ void main() {
     tester,
   ) async {
     final repository = DelayedRepository();
-    await tester.pumpWidget(LenkaApp(repository: repository));
+    await pumpForegroundApp(tester, LenkaApp(repository: repository));
     await tester.enterText(
       find.byType(TextField).first,
       'test@example.invalid',
@@ -255,6 +269,8 @@ void main() {
     await tester.enterText(find.byType(TextField).last, 'fictional');
     await tester.tap(find.text('Ingresar'));
     await tester.pump();
+    expect(repository.loginCalls, 1);
+    expect(repository.authentication.isCompleted, isFalse);
     await tester.pumpWidget(const MaterialApp(home: SizedBox()));
     repository.authentication.complete();
     await tester.pumpAndSettle();
