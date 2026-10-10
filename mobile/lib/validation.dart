@@ -39,13 +39,16 @@ void _identity(Map<String, dynamic> row) {
 
 List<Map<String, dynamic>> _list(
   dynamic value,
-  void Function(Map<String, dynamic>) check,
-) {
+  void Function(Map<String, dynamic>) check, {
+  bool uniqueIds = false,
+}) {
   if (value is! List) _invalid();
   final rows = <Map<String, dynamic>>[];
+  final ids = <int>{};
   for (final item in value) {
     final row = _record(item);
     check(row);
+    if (uniqueIds && !ids.add(row['id'] as int)) _invalid();
     rows.add(row);
   }
   return rows;
@@ -59,7 +62,7 @@ void _deposit(Map<String, dynamic> row) {
 }
 
 List<Map<String, dynamic>> validateDeposits(dynamic value) =>
-    _list(value, _deposit);
+    _list(value, _deposit, uniqueIds: true);
 
 Map<String, dynamic> validateDepositDetail(dynamic value, int requestedId) {
   final row = _record(value);
@@ -91,4 +94,4 @@ List<Map<String, dynamic>> validateStatements(dynamic value) =>
       _date(row, 'date_to');
       if ((row['date_from'] as String).compareTo(row['date_to'] as String) > 0)
         _invalid();
-    });
+    }, uniqueIds: true);

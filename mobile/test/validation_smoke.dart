@@ -84,5 +84,16 @@ void main() {
   rejects(() => validateStatements([statement()..['state'] = 'draft']));
   rejects(() => validateStatements([statement()..remove('type')]));
   rejects(() => validateStatements([statement()..['type'] = 'unknown']));
+  rejects(() => validateDeposits([deposit(), deposit()]));
+  rejects(() => validateDeposits([deposit(), deposit()..['currency'] = 'USD']));
+  rejects(() => validateStatements([statement(), statement()]));
+  final sameAmountDifferentIds = validateDeposits([
+    deposit(),
+    deposit()..['id'] = 2,
+  ]);
+  if (sameAmountDifferentIds.length != 2) {
+    throw StateError('Distinct deposits with matching amounts were removed');
+  }
+  passed++;
   print('PASS: $passed financial response validation checks.');
 }

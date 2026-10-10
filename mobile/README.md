@@ -27,7 +27,7 @@ contra un usuario portal móvil en staging, incluido el acceso revocado.
 No habilitar usuarios reales hasta completar pruebas de aislamiento de empresa
 y contacto, expiración, compatibilidad 2FA y recuperación de contraseña.
 Cerrar sesión elimina de inmediato la sesión local e intenta revocarla en Odoo con un tiempo de espera limitado. Si no hay conexión, no se afirma que la revocación remota haya ocurrido.
-Se añadieron estados de cuenta emitidos y una cubierta de privacidad al pasar a segundo plano. No equivale a bloquear capturas del sistema operativo. Faltan biometría, bloqueo por inactividad y distribución en tiendas.
+Se añadieron estados de cuenta emitidos, filtros de ahorros/créditos, identidad visual oficial y una cubierta de privacidad al pasar a segundo plano. No equivale a bloquear capturas del sistema operativo. El cierre por inactividad de cinco minutos está implementado, pero su integración visual sigue pendiente de pruebas Flutter/dispositivo. Faltan biometría y distribución en tiendas.
 
 ## Verificaciones
 
@@ -35,3 +35,14 @@ Las pruebas widget están en `test/savings_test.dart`; no confundirlas con prueb
 en teléfono. `test/api_smoke.dart` ejecuta validaciones sin depender de Flutter.
 Las pruebas Odoo de privacidad están en `lenka_financiero/tests/test_mobile_privacy.py`.
 Nunca ejecutar pruebas que creen registros sobre la base de producción.
+
+Para repetir todas las comprobaciones locales sin ejecutar Flutter ni conectar a Odoo:
+
+```sh
+python verify_offline.py --dart /RUTA/AL/SDK/dart
+```
+
+En Windows usar la ruta completa a `dart.exe`. El comando verifica el ícono
+original, analiza los módulos Dart independientes, ejecuta siete suites Dart y
+nueve pruebas Python. No compila APK/IPA, no instala nada y no valida pantallas
+ni las reglas de acceso del ORM de Odoo. Esas comprobaciones siguen pendientes.
