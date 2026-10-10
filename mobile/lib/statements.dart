@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
-import 'main.dart' show money;
+import 'presentation.dart' show money, displayDate;
 
 class StatementsPage extends StatefulWidget {
   const StatementsPage({super.key, required this.repository});
@@ -95,7 +95,9 @@ class _StatementsPageState extends State<StatementsPage> {
                         row['name'] as String? ?? 'Estado de cuenta',
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
-                      Text('${row['date_from']} — ${row['date_to']}'),
+                      Text(
+                        '${displayDate(row['date_from'] as String)} — ${displayDate(row['date_to'] as String)}',
+                      ),
                       const SizedBox(height: 12),
                       Text(
                         'Saldo inicial: ${money(row['opening_balance'], row['currency'] as String? ?? '')}',
