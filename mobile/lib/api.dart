@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'validation.dart';
+
 class LenkaFailure implements Exception {
   const LenkaFailure(this.message, {this.sessionExpired = false});
   final String message;
@@ -141,21 +143,26 @@ class OdooSavingsRepository implements SavingsRepository {
   @override
   Future<List<Map<String, dynamic>>> investments() async {
     final data = await _call('/lenka/mobile/v1/investments', {});
-    if (data is! List)
-      throw const LenkaFailure('La respuesta de Lenka no es válida.');
-    if (data.any((row) => row is! Map)) {
-      throw const LenkaFailure('No pudimos leer tus depósitos.');
+    try {
+      return validateDeposits(data);
+    } on InvalidFinancialData {
+      throw const LenkaFailure(
+        'La información de tus depósitos está incompleta. Intentá actualizar o contactá a Lenka.',
+      );
     }
-    return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
   @override
   Future<Map<String, dynamic>> detail(int id) async {
     if (id <= 0) throw ArgumentError.value(id);
     final data = await _call('/lenka/mobile/v1/investments/$id', {});
-    if (data is! Map)
-      throw const LenkaFailure('La respuesta de Lenka no es válida.');
-    return Map<String, dynamic>.from(data);
+    try {
+      return validateDepositDetail(data, id);
+    } on InvalidFinancialData {
+      throw const LenkaFailure(
+        'No pudimos validar el detalle de tu depósito. Contactá a Lenka.',
+      );
+    }
   }
 
   @override
@@ -190,9 +197,12 @@ class OdooSavingsRepository implements SavingsRepository {
   @override
   Future<List<Map<String, dynamic>>> statements() async {
     final data = await _call('/lenka/mobile/v1/statements', {});
-    if (data is! List || data.any((row) => row is! Map)) {
-      throw const LenkaFailure('No pudimos leer tus estados de cuenta.');
+    try {
+      return validateStatements(data);
+    } on InvalidFinancialData {
+      throw const LenkaFailure(
+        'No pudimos validar tus estados de cuenta. Intentá actualizar o contactá a Lenka.',
+      );
     }
-    return data.map((row) => Map<String, dynamic>.from(row as Map)).toList();
   }
 }
