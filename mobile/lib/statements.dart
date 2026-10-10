@@ -64,7 +64,11 @@ class _StatementsPageState extends State<StatementsPage> {
                         reload();
                       }
                     },
-                    child: const Text('Continuar'),
+                    child: Text(
+                      failure is LenkaFailure && failure.sessionExpired
+                          ? 'Ingresar nuevamente'
+                          : 'Volver a intentar',
+                    ),
                   ),
                 ],
               ),
