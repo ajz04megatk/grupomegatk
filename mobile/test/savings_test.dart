@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lenka_clientes/api.dart';
+import 'package:lenka_clientes/brand.dart';
 import 'package:lenka_clientes/main.dart';
 import 'package:lenka_clientes/statements.dart';
 
@@ -70,6 +71,13 @@ class DelayedRepository extends FakeRepository {
 }
 
 void main() {
+  test('Official Lenka colors define the interface', () {
+    final theme = LenkaBrand.theme;
+    expect(theme.colorScheme.primary, LenkaBrand.sky);
+    expect(theme.colorScheme.onPrimary, LenkaBrand.ink);
+    expect(theme.appBarTheme.backgroundColor, LenkaBrand.sky);
+    expect(theme.scaffoldBackgroundColor, LenkaBrand.ivory);
+  });
   testWidgets(
     'Statements distinguish savings and credit without mixing currencies',
     (tester) async {
