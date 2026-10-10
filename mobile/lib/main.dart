@@ -510,8 +510,19 @@ class _DepositPageState extends State<DepositPage> {
             Text(
               'Intereses netos pagados: ${money(data['paid_interest'], currency)}',
             ),
+            const Divider(height: 40),
             Text(
-              'Vencimiento: ${data['maturity_date'] is String ? data['maturity_date'] : 'Sin fecha registrada'}',
+              'Condiciones del depósito',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            for (final condition in depositConditions(data, widget.id))
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(condition),
+              ),
+            const SizedBox(height: 12),
+            const Text(
+              'Las tasas corresponden al período indicado. El importe de un retiro anticipado debe confirmarse con Lenka según tu contrato.',
             ),
             const Divider(height: 40),
             Text('Movimientos', style: Theme.of(context).textTheme.titleLarge),

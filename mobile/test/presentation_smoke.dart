@@ -54,6 +54,11 @@ void main() {
     ...deposit(1, 'HNL', 1000),
     'accrued_interest': 20,
     'paid_interest': 10,
+    'principal_amount': 25000,
+    'passive_rate': 1.25,
+    'early_withdrawal_rate': 0.5,
+    'rate_period': 'annual',
+    'start_date': '2026-01-01',
     'maturity_date': false,
     'interest_history': [
       {'date': '2026-09-01', 'amount': 10, 'state': 'paid'},
@@ -64,6 +69,28 @@ void main() {
     ],
   };
   final movements = depositMovements(detail, 1);
+  final conditions = depositConditions(detail, 1);
+  check(
+    conditions.contains('Tasa contractual: 1.25 % anual'),
+    'Annual rate changed',
+  );
+  check(
+    conditions.contains('Apertura: 01/01/2026'),
+    'Opening date not localized',
+  );
+  check(
+    conditions.contains('Vencimiento: Sin fecha registrada'),
+    'Missing maturity invented',
+  );
+  final monthly = depositConditions({...detail, 'rate_period': 'monthly'}, 1);
+  check(
+    monthly.contains('Tasa contractual: 1.25 % mensual'),
+    'Monthly rate converted',
+  );
+  check(
+    monthly.contains('Tasa por retiro anticipado: 0.5 % mensual'),
+    'Early rate omitted',
+  );
   check(
     movements.map((m) => m.date).join(',') ==
         '2026-10-01,2026-09-15,2026-09-01',
@@ -76,6 +103,6 @@ void main() {
     'Source mutated',
   );
   print(
-    'PASS: 20 formatting, savings summary and movement presentation checks.',
+    'PASS: 25 formatting, savings summary, conditions and movement presentation checks.',
   );
 }

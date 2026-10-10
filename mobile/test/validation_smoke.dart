@@ -22,6 +22,11 @@ Map<String, dynamic> detail() => {
   ...deposit(),
   'accrued_interest': 10,
   'paid_interest': 5,
+  'principal_amount': 25000,
+  'passive_rate': 1.25,
+  'early_withdrawal_rate': 0.5,
+  'rate_period': 'annual',
+  'start_date': '2026-01-01',
   'maturity_date': false,
   'interest_history': [
     {'date': '2026-10-09', 'amount': 10, 'state': 'accrued'},
@@ -63,6 +68,15 @@ void main() {
   rejects(() => validateDeposits([deposit(), false]));
   validateDepositDetail(detail(), 1);
   passed++;
+  rejects(() => validateDepositDetail(detail()..['rate_period'] = 'weekly', 1));
+  rejects(() => validateDepositDetail(detail()..['passive_rate'] = -1, 1));
+  rejects(
+    () => validateDepositDetail(detail()..['early_withdrawal_rate'] = null, 1),
+  );
+  rejects(() => validateDepositDetail(detail()..remove('start_date'), 1));
+  rejects(
+    () => validateDepositDetail(detail()..['maturity_date'] = '2025-12-31', 1),
+  );
   rejects(() => validateDepositDetail(detail(), 2));
   rejects(() => validateDepositDetail(detail()..['withdrawals'] = null, 1));
   rejects(

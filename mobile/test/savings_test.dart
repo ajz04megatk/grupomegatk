@@ -52,6 +52,11 @@ class FakeRepository implements SavingsRepository {
     'outstanding_principal': 25000,
     'accrued_interest': 500,
     'paid_interest': 450,
+    'principal_amount': 25000,
+    'passive_rate': 1.25,
+    'early_withdrawal_rate': 0.5,
+    'rate_period': 'annual',
+    'start_date': '2026-01-01',
     'interest_history': [],
     'withdrawals': [],
   };

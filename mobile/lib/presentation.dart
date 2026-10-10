@@ -74,6 +74,19 @@ String displayDate(String iso) {
   return parts.length == 3 ? '${parts[2]}/${parts[1]}/${parts[0]}' : iso;
 }
 
+List<String> depositConditions(Map<String, dynamic> data, int id) {
+  final row = validateDepositDetail(data, id);
+  final period = row['rate_period'] == 'monthly' ? 'mensual' : 'anual';
+  String rate(num value) => value.toString().replaceFirst(RegExp(r'\.0$'), '');
+  return [
+    'Capital recibido: ${money(row['principal_amount'], row['currency'] as String)}',
+    'Apertura: ${displayDate(row['start_date'] as String)}',
+    'Vencimiento: ${row['maturity_date'] is String ? displayDate(row['maturity_date'] as String) : 'Sin fecha registrada'}',
+    'Tasa contractual: ${rate(row['passive_rate'] as num)} % $period',
+    'Tasa por retiro anticipado: ${rate(row['early_withdrawal_rate'] as num)} % $period',
+  ];
+}
+
 class DepositMovement {
   const DepositMovement(this.date, this.label, this.amount, this.order);
   final String date;

@@ -70,7 +70,21 @@ Map<String, dynamic> validateDepositDetail(dynamic value, int requestedId) {
   if (row['id'] != requestedId) _invalid();
   _amount(row, 'accrued_interest');
   _amount(row, 'paid_interest');
+  _amount(row, 'principal_amount');
+  _amount(row, 'passive_rate');
+  _amount(row, 'early_withdrawal_rate');
+  if ((row['principal_amount'] as num) <= 0 ||
+      (row['passive_rate'] as num) < 0 ||
+      (row['early_withdrawal_rate'] as num) < 0)
+    _invalid();
+  if (!const {'monthly', 'annual'}.contains(row['rate_period'])) _invalid();
+  _date(row, 'start_date');
   _date(row, 'maturity_date', optional: true);
+  if (row['maturity_date'] is String &&
+      (row['maturity_date'] as String).compareTo(row['start_date'] as String) <
+          0) {
+    _invalid();
+  }
   row['interest_history'] = _list(row['interest_history'], (item) {
     _date(item, 'date');
     _amount(item, 'amount');
