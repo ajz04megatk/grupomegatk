@@ -17,7 +17,7 @@ void _text(Map<String, dynamic> row, String key) {
 
 void _amount(Map<String, dynamic> row, String key) {
   final value = row[key];
-  if (value is! num || !value.isFinite) _invalid();
+  if (value is! num || !value.isFinite || value.abs() >= 1e21) _invalid();
 }
 
 void _date(Map<String, dynamic> row, String key, {bool optional = false}) {
