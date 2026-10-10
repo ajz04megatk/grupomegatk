@@ -575,12 +575,17 @@ class _DepositPageState extends State<DepositPage> {
             ),
             const Divider(height: 40),
             Text('Movimientos', style: Theme.of(context).textTheme.titleLarge),
+            const Text(
+              'Los intereses pagados pueden formar parte de un retiro. No sumés ambos importes como ingresos separados.',
+            ),
             if (movements.isEmpty)
               const Text('No hay movimientos registrados.'),
             for (final item in movements)
               ListTile(
                 title: Text(item.label),
-                subtitle: Text(displayDate(item.date)),
+                subtitle: Text(
+                  [displayDate(item.date), ...item.details].join('\n'),
+                ),
                 trailing: Text(money(item.amount, currency)),
               ),
           ],

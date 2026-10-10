@@ -88,11 +88,30 @@ void main() {
     'start_date': '2026-01-01',
     'maturity_date': false,
     'interest_history': [
-      {'date': '2026-09-01', 'amount': 10, 'state': 'paid'},
-      {'date': '2026-10-01', 'amount': 10, 'state': 'accrued'},
+      {
+        'date': '2026-09-01',
+        'amount': 10,
+        'tax_amount': 1,
+        'net_amount': 9,
+        'state': 'paid',
+      },
+      {
+        'date': '2026-10-01',
+        'amount': 10,
+        'tax_amount': 1,
+        'net_amount': 9,
+        'state': 'accrued',
+      },
     ],
     'withdrawals': [
-      {'date': '2026-09-15', 'total_amount': 100},
+      {
+        'date': '2026-09-15',
+        'total_amount': 100,
+        'principal_amount': 91,
+        'interest_amount': 9,
+        'gross_interest_amount': 10,
+        'interest_tax_amount': 1,
+      },
     ],
   };
   final movements = depositMovements(detail, 1);
@@ -124,12 +143,25 @@ void main() {
     'Movements out of order',
   );
   check(movements.last.label.contains('bruto'), 'Gross interest mislabeled');
+  check(
+    movements.last.details.contains('Retención: HNL 1.00'),
+    'Interest tax hidden',
+  );
+  check(
+    movements.last.details.contains('Interés neto: HNL 9.00'),
+    'Net interest mislabeled',
+  );
+  check(
+    movements[1].details.contains('Capital retirado: HNL 91.00'),
+    'Withdrawal principal not separated',
+  );
+  check(movements[1].amount == 100, 'Withdrawal total changed');
   check(displayDate('2026-10-09') == '09/10/2026', 'Spanish date incorrect');
   check(
     (detail['interest_history'] as List).first['date'] == '2026-09-01',
     'Source mutated',
   );
   print(
-    'PASS: 31 filtering, formatting, savings summary, conditions and movement presentation checks.',
+    'PASS: 35 filtering, formatting, savings summary, conditions and movement presentation checks.',
   );
 }

@@ -221,6 +221,8 @@ class LenkaMobileService(models.AbstractModel):
                 'base_amount': line.base_amount,
                 'rate': line.rate,
                 'amount': line.amount,
+                'tax_amount': line.tax_amount,
+                'net_amount': line.net_amount,
                 'state': line.state,
             } for line in investment.interest_line_ids.filtered(
                 lambda line: line.state in ('accrued', 'paid')
@@ -229,6 +231,8 @@ class LenkaMobileService(models.AbstractModel):
                 'date': fields.Date.to_string(withdrawal.date),
                 'principal_amount': withdrawal.principal_amount,
                 'interest_amount': withdrawal.accrued_interest_amount,
+                'gross_interest_amount': withdrawal.gross_interest_amount,
+                'interest_tax_amount': withdrawal.interest_tax_amount,
                 'effective_rate': withdrawal.effective_rate,
                 'total_amount': withdrawal.total_amount,
                 'early_withdrawal': withdrawal.early_withdrawal,

@@ -122,16 +122,24 @@ List<String> depositConditions(Map<String, dynamic> data, int id) {
 }
 
 class DepositMovement {
-  const DepositMovement(this.date, this.label, this.amount, this.order);
+  const DepositMovement(
+    this.date,
+    this.label,
+    this.amount,
+    this.order, {
+    this.details = const [],
+  });
   final String date;
   final String label;
   final num amount;
   final int order;
+  final List<String> details;
 }
 
 List<DepositMovement> depositMovements(Map<String, dynamic> data, int id) {
   final row = validateDepositDetail(data, id);
   final result = <DepositMovement>[];
+  final currency = row['currency'] as String;
   for (final item in row['interest_history'] as List) {
     result.add(
       DepositMovement(
@@ -141,6 +149,10 @@ List<DepositMovement> depositMovements(Map<String, dynamic> data, int id) {
             : 'Interés registrado (importe bruto)',
         item['amount'] as num,
         result.length,
+        details: [
+          'Retención: ${money(item['tax_amount'], currency)}',
+          'Interés neto: ${money(item['net_amount'], currency)}',
+        ],
       ),
     );
   }
@@ -151,6 +163,12 @@ List<DepositMovement> depositMovements(Map<String, dynamic> data, int id) {
         'Retiro registrado',
         item['total_amount'] as num,
         result.length,
+        details: [
+          'Capital retirado: ${money(item['principal_amount'], currency)}',
+          'Interés bruto: ${money(item['gross_interest_amount'], currency)}',
+          'Retención: ${money(item['interest_tax_amount'], currency)}',
+          'Interés neto: ${money(item['interest_amount'], currency)}',
+        ],
       ),
     );
   }

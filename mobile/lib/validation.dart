@@ -88,11 +88,17 @@ Map<String, dynamic> validateDepositDetail(dynamic value, int requestedId) {
   row['interest_history'] = _list(row['interest_history'], (item) {
     _date(item, 'date');
     _amount(item, 'amount');
+    _amount(item, 'tax_amount');
+    _amount(item, 'net_amount');
     if (!const {'accrued', 'paid'}.contains(item['state'])) _invalid();
   });
   row['withdrawals'] = _list(row['withdrawals'], (item) {
     _date(item, 'date');
     _amount(item, 'total_amount');
+    _amount(item, 'principal_amount');
+    _amount(item, 'interest_amount');
+    _amount(item, 'gross_interest_amount');
+    _amount(item, 'interest_tax_amount');
   });
   return row;
 }

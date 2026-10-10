@@ -29,7 +29,13 @@ Map<String, dynamic> detail() => {
   'start_date': '2026-01-01',
   'maturity_date': false,
   'interest_history': [
-    {'date': '2026-10-09', 'amount': 10, 'state': 'accrued'},
+    {
+      'date': '2026-10-09',
+      'amount': 10,
+      'tax_amount': 1,
+      'net_amount': 9,
+      'state': 'accrued',
+    },
   ],
   'withdrawals': [],
 };
@@ -68,6 +74,9 @@ void main() {
   rejects(() => validateDeposits([deposit(), false]));
   validateDepositDetail(detail(), 1);
   passed++;
+  final missingNet = detail();
+  (missingNet['interest_history'] as List).first.remove('net_amount');
+  rejects(() => validateDepositDetail(missingNet, 1));
   rejects(() => validateDepositDetail(detail()..['rate_period'] = 'weekly', 1));
   rejects(() => validateDepositDetail(detail()..['passive_rate'] = -1, 1));
   rejects(
@@ -86,7 +95,13 @@ void main() {
     () => validateDepositDetail(
       detail()
         ..['interest_history'] = [
-          {'date': '2026-10-09', 'amount': 10, 'state': 'draft'},
+          {
+            'date': '2026-10-09',
+            'amount': 10,
+            'tax_amount': 1,
+            'net_amount': 9,
+            'state': 'draft',
+          },
         ],
       1,
     ),
