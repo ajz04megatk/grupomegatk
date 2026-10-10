@@ -8,6 +8,7 @@ class ODentalTodoistConnectWizard(models.TransientModel):
 
     professional_id = fields.Many2one("odental.professional", required=True)
     organization_id = fields.Many2one("odental.organization", required=True)
+    project_name = fields.Char(string="Proyecto privado en Todoist", compute="_compute_project_name")
     pilot_patient_id = fields.Many2one("odental.patient", string="Paciente de prueba", required=True)
     api_token = fields.Char(string="Token personal de Todoist", required=True)
     label_name = fields.Char(string="Etiqueta de reunión", default="reunión", required=True)
@@ -15,6 +16,12 @@ class ODentalTodoistConnectWizard(models.TransientModel):
         string="Duración si Todoist no indica una", default=60, required=True,
     )
     source_timezone = fields.Char(string="Zona horaria", default="America/Tegucigalpa", required=True)
+
+    @api.depends("organization_id")
+    def _compute_project_name(self):
+        for wizard in self:
+            wizard.project_name = (f"{wizard.organization_id.name.strip()} | Agenda clínica"
+                                   if wizard.organization_id else False)
 
     @api.model
     def default_get(self, fields_list):
@@ -58,12 +65,23 @@ class ODentalTodoistConnectWizard(models.TransientModel):
             ("professional_id", "=", professional.id),
             ("organization_id", "=", organization.id),
         ], limit=1)
+        if (connection and connection.todoist_user_id
+                and connection.todoist_user_id != todoist_user_id
+                and self.env["odental.todoist.mirror"].sudo().search_count([
+                    ("connection_id", "=", connection.id),
+                ])):
+            raise UserError("Desconecte la cuenta anterior antes de vincular otra cuenta Todoist.")
+        project_id = connections._find_or_create_clinical_project(
+            self.api_token, self.project_name,
+        )
         values = {
             "professional_id": professional.id,
             "organization_id": organization.id,
             "pilot_patient_id": self.pilot_patient_id.id,
             "api_token": self.api_token,
             "todoist_user_id": todoist_user_id,
+            "project_id": project_id,
+            "project_name": self.project_name,
             "label_name": self.label_name.strip(),
             "default_duration_minutes": self.default_duration_minutes,
             "source_timezone": self.source_timezone.strip(),

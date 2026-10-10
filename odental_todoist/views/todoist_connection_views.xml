@@ -7,6 +7,7 @@
             <list create="false" delete="false" edit="false">
                 <field name="professional_id"/>
                 <field name="organization_id"/>
+                <field name="project_name"/>
                 <field name="pilot_patient_id"/>
                 <field name="label_name"/>
                 <field name="default_duration_minutes"/>
@@ -29,6 +30,7 @@
                     <group>
                         <field name="professional_id"/>
                         <field name="organization_id"/>
+                        <field name="project_name"/>
                         <field name="pilot_patient_id"/>
                         <field name="label_name"/>
                         <field name="default_duration_minutes"/>
@@ -49,6 +51,7 @@
                 <group>
                     <field name="professional_id" domain="[('user_id', '=', uid)]"/>
                     <field name="organization_id"/>
+                    <field name="project_name" readonly="1"/>
                     <field name="pilot_patient_id" domain="[('organization_id', '=', organization_id)]"/>
                     <field name="label_name"/>
                     <field name="default_duration_minutes"/>
