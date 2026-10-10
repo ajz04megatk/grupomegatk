@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'brand.dart';
 import 'presentation.dart';
 
 class StatementsPage extends StatefulWidget {
@@ -178,12 +179,12 @@ class _PrivacyCoverState extends State<PrivacyCover>
       if (hidden)
         const Positioned.fill(
           child: ColoredBox(
-            color: Color(0xfff4f7fa),
+            color: LenkaBrand.ivory,
             child: Center(
               child: Text(
                 'Lenka · Tu información es privada',
                 textDirection: TextDirection.ltr,
-                style: TextStyle(color: Color(0xff075e88), fontSize: 20),
+                style: TextStyle(color: LenkaBrand.ink, fontSize: 20),
               ),
             ),
           ),
