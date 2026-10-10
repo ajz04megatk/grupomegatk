@@ -2,7 +2,9 @@
 
 import hashlib
 import json
+import re
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
@@ -39,6 +41,7 @@ class ODentalTodoistConnection(models.Model):
     todoist_user_id = fields.Char(copy=False)
     project_id = fields.Char(string="Proyecto privado de agenda en Todoist", copy=False, readonly=True)
     project_name = fields.Char(string="Nombre del proyecto", copy=False, readonly=True)
+    project_reference = fields.Char(string="Destino configurado (enlace o ID)", copy=False, readonly=True)
     label_name = fields.Char(string="Etiqueta que bloquea", default="reunión", required=True)
     default_duration_minutes = fields.Integer(
         string="Duración si Todoist no indica una", default=60, required=True,
@@ -134,6 +137,54 @@ class ODentalTodoistConnection(models.Model):
             project = self._send_json(token, "POST", "projects", {"name": name})
         self._require_private_project(project)
         return str(project["id"])
+
+    @api.model
+    def _select_clinical_project(self, token, reference):
+        """Resolve a link/ID against this account's projects, without fetching user URLs."""
+        reference = (reference or "").strip()
+        if not reference or len(reference) > 512:
+            raise UserError("Indique el enlace o ID del proyecto de Todoist.")
+        if "://" in reference:
+            try:
+                parsed = urlsplit(reference)
+                valid_host = (parsed.hostname in
+                              ("todoist.com", "www.todoist.com", "app.todoist.com")
+                              and parsed.port is None)
+            except ValueError:
+                valid_host = False
+            if (not valid_host or parsed.scheme != "https"
+                    or parsed.username or parsed.password or parsed.query or parsed.fragment):
+                raise UserError("Pegue un enlace HTTPS directo al proyecto de Todoist.")
+            match = re.fullmatch(r"/app/project/([A-Za-z0-9_-]+)[/]?", parsed.path)
+            if not match:
+                raise UserError("Pegue el enlace del proyecto, no de una tarea o invitación.")
+            slug = match.group(1)
+        elif re.fullmatch(r"[A-Za-z0-9_-]{1,128}", reference):
+            slug = reference
+        else:
+            raise UserError("Indique un ID o enlace válido de un proyecto Todoist.")
+        cursor = None
+        seen_cursors = set()
+        for _page in range(100):
+            params = {"limit": 200}
+            if cursor:
+                params["cursor"] = cursor
+            data = self._get_json(token, "projects", params=params)
+            if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+                raise UserError("Todoist no devolvió una lista completa de proyectos.")
+            for project in data["results"]:
+                if isinstance(project, dict) and project.get("id"):
+                    project_id = str(project["id"])
+                    if slug == project_id or slug.endswith("-" + project_id):
+                        self._require_private_project(project)
+                        return project
+            cursor = data.get("next_cursor")
+            if not cursor or cursor in seen_cursors:
+                break
+            seen_cursors.add(cursor)
+        if cursor:
+            raise UserError("La lista de proyectos de Todoist quedó incompleta.")
+        raise UserError("El proyecto indicado no pertenece a esta cuenta de Todoist o no existe.")
 
     @api.model
     def _require_private_project(self, project):

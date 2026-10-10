@@ -3,9 +3,9 @@
 Piloto para intercambiar disponibilidad entre O Dental y la agenda personal del
 profesional. Las reuniones de Todoist bloquean O Dental: recepción solo ve
 **No disponible**, el profesional y el intervalo; sus títulos y descripciones
-no se copian. Las citas clínicas se publican en un proyecto personal de Todoist
-llamado **MegaSmile | Agenda clínica** para la organización MegaSmile (o el
-nombre de cada organización seguido de `| Agenda clínica`),
+no se copian. Las citas clínicas se publican en el proyecto personal de Todoist
+configurado para cada conexión. Si no se pega enlace o ID, se crea o reutiliza
+el nombre indicado (por defecto **MegaSmile | Agenda clínica** para MegaSmile),
 con nombre del paciente, servicio general y horario, sin expediente ni notas.
 
 ## Preparación
@@ -19,8 +19,14 @@ con nombre del paciente, servicio general y horario, sin expediente ni notas.
 3. El profesional obtiene su token personal en su propia cuenta de Todoist y
    lo pega directamente en el formulario de Odoo. No enviarlo por chat ni a la
    recepcionista. Elegir etiqueta `reunión` y zona `America/Tegucigalpa`.
-   Al conectar, O Dental crea o reutiliza un proyecto **personal y privado**
-   con el nombre mostrado en el formulario. Rechaza proyectos compartidos o
+   En **Enlace o ID del proyecto existente**, puede pegar el enlace obtenido
+   con **Copiar enlace al proyecto** en Todoist o el ID del proyecto. Si lo deja
+   vacío, O Dental crea o reutiliza el proyecto indicado en **Nombre si se crea
+   el proyecto**. El destino se configura por profesional y organización y se
+   puede cambiar volviendo a **Conectar mi Todoist**. Las citas espejo se mueven
+   al destino configurado durante la siguiente sincronización. O Dental solo
+   acepta proyectos **personales y privados** de la cuenta autenticada; rechaza
+   proyectos compartidos o
    pertenecientes a un espacio de trabajo y comprueba la privacidad en cada
    sincronización. Si hay nombres duplicados, el profesional debe resolverlos
    en su cuenta antes de conectar. Las reuniones personales con `@reunión`

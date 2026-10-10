@@ -161,6 +161,40 @@ class TestTodoistAvailability(TransactionCase):
             self.assertEqual(send.call_args.args[1:], ("POST", "projects",
                                                        {"name": project["name"]}))
 
+    def test_configured_project_link_uses_private_project_from_same_account(self):
+        project = {"id": "6XGabc123", "name": "Agenda Jennifer",
+                   "is_shared": False, "workspace_id": None}
+        with patch.object(type(self.connection), "_get_json",
+                          return_value={"results": [project]}) as fetch, \
+             patch.object(type(self.connection), "_send_json") as send:
+            selected = self.connection._select_clinical_project(
+                "synthetic-test-token",
+                "https://app.todoist.com/app/project/agenda-jennifer-6XGabc123",
+            )
+            self.assertEqual(selected, project)
+            self.assertEqual(fetch.call_count, 1)
+            send.assert_not_called()
+
+    def test_configured_project_rejects_untrusted_link_and_shared_destination(self):
+        with patch.object(type(self.connection), "_get_json") as fetch:
+            for reference in ("https://not-todoist.com/app/project/123",
+                              "https://app.todoist.com/app/task/123",
+                              "https://app.todoist.com:8443/app/project/123"):
+                with self.assertRaises(UserError):
+                    self.connection._select_clinical_project("synthetic-test-token", reference)
+            fetch.assert_not_called()
+        with patch.object(type(self.connection), "_get_json", return_value={
+                "results": [{"id": "123", "name": "Compartido", "is_shared": True}]}) as fetch:
+            with self.assertRaisesRegex(UserError, "privado"):
+                self.connection._select_clinical_project("synthetic-test-token", "123")
+            fetch.assert_called_once()
+
+    def test_configured_project_rejects_project_absent_from_account(self):
+        with patch.object(type(self.connection), "_get_json",
+                          return_value={"results": []}):
+            with self.assertRaisesRegex(UserError, "no pertenece"):
+                self.connection._select_clinical_project("synthetic-test-token", "unknown-id")
+
     def test_shared_project_stops_sync_before_patient_export(self):
         with patch.object(type(self.connection), "_get_json",
                           return_value={"id": "private-project",
