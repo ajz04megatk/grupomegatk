@@ -17,6 +17,13 @@ void check(bool value, String message) {
 }
 
 void main() {
+  check(money(25000, 'HNL') == 'HNL 25,000.00', 'Money grouping incorrect');
+  check(money(-1234.56, 'USD') == 'USD -1,234.56', 'Negative amount incorrect');
+  check(money(-0.001, 'USD') == 'USD 0.00', 'Negative zero displayed');
+  for (final value in [null, double.nan, double.infinity, 1e21, '100']) {
+    check(money(value, 'HNL') == 'No disponible', 'Invalid amount displayed');
+  }
+  check(money(100, 'EUR') == 'No disponible', 'Unsupported currency displayed');
   final rows = [
     deposit(1, 'HNL', 25000),
     deposit(2, 'USD', 1000),
@@ -68,5 +75,7 @@ void main() {
     (detail['interest_history'] as List).first['date'] == '2026-09-01',
     'Source mutated',
   );
-  print('PASS: 11 savings summary and movement presentation checks.');
+  print(
+    'PASS: 20 formatting, savings summary and movement presentation checks.',
+  );
 }
