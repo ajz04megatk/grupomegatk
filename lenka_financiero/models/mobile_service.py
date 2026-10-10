@@ -13,12 +13,11 @@ class LenkaMobileService(models.AbstractModel):
         partner = user.partner_id
         if not partner:
             raise AccessError(_('El usuario autenticado no tiene un contacto asociado.'))
-        commercial_partner = partner
         if not user.has_group('lenka_financiero.group_lenka_mobile_client'):
             raise AccessError(_('El usuario no tiene habilitado el acceso a la app Financiero Lenka.'))
-        if not commercial_partner.lenka_mobile_enabled:
+        if not partner.lenka_mobile_enabled:
             raise AccessError(_('El acceso movil de este cliente esta deshabilitado.'))
-        return commercial_partner
+        return partner
 
     @api.model
     def _partner_domain(self, field_name='partner_id'):
@@ -85,7 +84,7 @@ class LenkaMobileService(models.AbstractModel):
             ('partner_id', '=', partner.id),
             ('company_id', 'in', self.env.user.company_ids.ids),
             ('is_quote', '=', False),
-            ('state', 'not in', ('draft', 'review', 'rejected', 'cancelled')),
+            ('state', 'in', ('approved', 'contracted', 'active', 'done')),
         ], order='date desc, id desc')
 
         result = []
@@ -122,6 +121,7 @@ class LenkaMobileService(models.AbstractModel):
             ('partner_id', '=', partner.id),
             ('company_id', 'in', self.env.user.company_ids.ids),
             ('is_quote', '=', False),
+            ('state', 'in', ('approved', 'contracted', 'active', 'done')),
         ], limit=1)
         if not operation:
             raise AccessError(_('La operacion solicitada no pertenece al usuario autenticado.'))
@@ -170,7 +170,7 @@ class LenkaMobileService(models.AbstractModel):
         investments = self.env['lenka.investment'].sudo().search([
             ('partner_id', '=', partner.id),
             ('company_id', 'in', self.env.user.company_ids.ids),
-            ('state', 'not in', ('draft', 'cancelled')),
+            ('state', 'in', ('active', 'matured', 'closed')),
         ], order='start_date desc, id desc')
 
         return [{
