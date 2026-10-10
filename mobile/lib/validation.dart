@@ -20,6 +20,21 @@ void _amount(Map<String, dynamic> row, String key) {
   if (value is! num || !value.isFinite || value.abs() >= 1e21) _invalid();
 }
 
+void _checkBreakdown(
+  Map<String, dynamic> row,
+  String total,
+  String first,
+  String second,
+) {
+  BigInt cents(String key) =>
+      BigInt.parse((row[key] as num).toStringAsFixed(2).replaceAll('.', ''));
+  // Independently rounded components can differ by one cent from a rounded sum.
+  // Never change the amounts received from the server to force a reconciliation.
+  if ((cents(total) - cents(first) - cents(second)).abs() > BigInt.one) {
+    _invalid();
+  }
+}
+
 void _date(Map<String, dynamic> row, String key, {bool optional = false}) {
   final value = row[key];
   if (optional && (value == null || value == false)) return;
@@ -90,6 +105,7 @@ Map<String, dynamic> validateDepositDetail(dynamic value, int requestedId) {
     _amount(item, 'amount');
     _amount(item, 'tax_amount');
     _amount(item, 'net_amount');
+    _checkBreakdown(item, 'amount', 'tax_amount', 'net_amount');
     if (!const {'accrued', 'paid'}.contains(item['state'])) _invalid();
   });
   row['withdrawals'] = _list(row['withdrawals'], (item) {
@@ -99,6 +115,18 @@ Map<String, dynamic> validateDepositDetail(dynamic value, int requestedId) {
     _amount(item, 'interest_amount');
     _amount(item, 'gross_interest_amount');
     _amount(item, 'interest_tax_amount');
+    _checkBreakdown(
+      item,
+      'gross_interest_amount',
+      'interest_tax_amount',
+      'interest_amount',
+    );
+    _checkBreakdown(
+      item,
+      'total_amount',
+      'principal_amount',
+      'interest_amount',
+    );
   });
   return row;
 }

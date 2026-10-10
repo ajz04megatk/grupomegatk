@@ -52,6 +52,52 @@ Map<String, dynamic> statement() => {
 };
 
 void main() {
+  final wrongInterest = detail();
+  (wrongInterest['interest_history'] as List).first['net_amount'] = 8;
+  rejects(() => validateDepositDetail(wrongInterest, 1));
+  final withdrawal = {
+    'date': '2026-10-09',
+    'principal_amount': 100,
+    'gross_interest_amount': 10,
+    'interest_tax_amount': 1,
+    'interest_amount': 9,
+    'total_amount': 109,
+  };
+  validateDepositDetail(detail()..['withdrawals'] = [withdrawal], 1);
+  passed++;
+  rejects(
+    () => validateDepositDetail(
+      detail()
+        ..['withdrawals'] = [
+          {...withdrawal, 'total_amount': 110},
+        ],
+      1,
+    ),
+  );
+  rejects(
+    () => validateDepositDetail(
+      detail()
+        ..['withdrawals'] = [
+          {...withdrawal, 'gross_interest_amount': 11},
+        ],
+      1,
+    ),
+  );
+  final rounded = detail();
+  (rounded['interest_history'] as List).first.addAll({
+    'amount': 0.01,
+    'tax_amount': 0.005,
+    'net_amount': 0.005,
+  });
+  validateDepositDetail(rounded, 1);
+  passed++;
+  final zeroTax = detail();
+  (zeroTax['interest_history'] as List).first.addAll({
+    'tax_amount': 0,
+    'net_amount': 10,
+  });
+  validateDepositDetail(zeroTax, 1);
+  passed++;
   for (final currency in ['HNL', 'USD']) {
     final row = deposit()..['currency'] = currency;
     final parsed = validateDeposits([row]);
