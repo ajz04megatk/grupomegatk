@@ -71,6 +71,30 @@ class DelayedRepository extends FakeRepository {
 }
 
 void main() {
+  testWidgets('Idle session removes savings and returns to login', (
+    tester,
+  ) async {
+    var elapsed = Duration.zero;
+    final repository = FakeRepository();
+    await tester.pumpWidget(
+      LenkaApp(repository: repository, elapsed: () => elapsed),
+    );
+    await tester.enterText(
+      find.byType(TextField).first,
+      'test@example.invalid',
+    );
+    await tester.enterText(find.byType(TextField).last, 'fictional');
+    await tester.tap(find.text('Ingresar'));
+    await tester.pumpAndSettle();
+    expect(find.text('Mis ahorros'), findsOneWidget);
+    elapsed = const Duration(minutes: 5);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(find.text('Mis ahorros'), findsNothing);
+    expect(find.textContaining('5 minutos sin actividad'), findsOneWidget);
+    expect(repository.logouts, greaterThanOrEqualTo(1));
+    await tester.pumpWidget(const SizedBox());
+  });
   testWidgets('Login displays the official Lenka asset', (tester) async {
     await tester.pumpWidget(LenkaApp(repository: FakeRepository()));
     await tester.pumpAndSettle();

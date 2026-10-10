@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'brand.dart';
+import 'idle_policy.dart';
 import 'statements.dart';
 import 'presentation.dart';
 export 'presentation.dart' show money;
@@ -20,17 +23,82 @@ void main() {
   runApp(LenkaApp(repository: repository));
 }
 
-class LenkaApp extends StatelessWidget {
-  const LenkaApp({super.key, required this.repository});
+class LenkaApp extends StatefulWidget {
+  const LenkaApp({super.key, required this.repository, this.elapsed});
   final SavingsRepository? repository;
+  final Duration Function()? elapsed;
+  @override
+  State<LenkaApp> createState() => _LenkaAppState();
+}
+
+class _LenkaAppState extends State<LenkaApp> with WidgetsBindingObserver {
+  final navigator = GlobalKey<NavigatorState>();
+  final clock = Stopwatch()..start();
+  final idle = IdlePolicy();
+  Timer? timer;
+  Duration get elapsed => widget.elapsed?.call() ?? clock.elapsed;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    timer = Timer.periodic(const Duration(seconds: 1), (_) => checkIdle());
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    clock.stop();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  void checkIdle() {
+    if (!mounted || !idle.expired(elapsed)) return;
+    idle.stop();
+    widget.repository?.logout();
+    navigator.currentState?.pushAndRemoveUntil(
+      PageRouteBuilder<void>(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        pageBuilder: (_, __, ___) => loginPage(
+          message: 'Cerramos tu sesión después de 5 minutos sin actividad. Ingresá nuevamente.',
+        ),
+      ),
+      (_) => false,
+    );
+  }
+
+  void activity() {
+    checkIdle();
+    idle.touch(elapsed);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) checkIdle();
+  }
+
+  Widget loginPage({String? message}) => LoginPage(
+    repository: widget.repository!,
+    initialMessage: message,
+    onAuthenticated: () => idle.start(elapsed),
+    onSessionEnded: idle.stop,
+  );
+
   @override
   Widget build(BuildContext context) => MaterialApp(
-    builder: (context, child) =>
-        PrivacyCover(child: child ?? const SizedBox.shrink()),
+    navigatorKey: navigator,
+    builder: (context, child) => Listener(
+      onPointerDown: (_) => activity(),
+      onPointerMove: (_) => activity(),
+      onPointerSignal: (_) => activity(),
+      child: PrivacyCover(child: child ?? const SizedBox.shrink()),
+    ),
     title: 'Lenka',
     debugShowCheckedModeBanner: false,
     theme: LenkaBrand.theme,
-    home: repository == null
+    home: widget.repository == null
         ? const Scaffold(
             body: Center(
               child: Padding(
@@ -39,13 +107,22 @@ class LenkaApp extends StatelessWidget {
               ),
             ),
           )
-        : LoginPage(repository: repository!),
+        : loginPage(),
   );
 }
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key, required this.repository});
+  const LoginPage({
+    super.key,
+    required this.repository,
+    this.initialMessage,
+    this.onAuthenticated,
+    this.onSessionEnded,
+  });
   final SavingsRepository repository;
+  final String? initialMessage;
+  final VoidCallback? onAuthenticated;
+  final VoidCallback? onSessionEnded;
   @override
   State<LoginPage> createState() => _LoginPageState();
 }
@@ -79,6 +156,7 @@ class _LoginPageState extends State<LoginPage> {
         return;
       }
       password.clear();
+      widget.onAuthenticated?.call();
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => SavingsPage(repository: widget.repository),
@@ -87,6 +165,7 @@ class _LoginPageState extends State<LoginPage> {
     } on LenkaFailure catch (e) {
       if (mounted) setState(() => error = e.message);
     } finally {
+      widget.onSessionEnded?.call();
       if (mounted) {
         password.clear();
         setState(() => busy = false);
@@ -112,6 +191,11 @@ class _LoginPageState extends State<LoginPage> {
                   style: Theme.of(context).textTheme.headlineMedium,
                 ),
                 const Text('Tus ahorros, siempre a mano.'),
+                if (widget.initialMessage != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: Text(widget.initialMessage!),
+                  ),
                 const SizedBox(height: 32),
                 TextField(
                   controller: email,
