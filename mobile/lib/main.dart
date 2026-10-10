@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'statements.dart';
+import 'presentation.dart';
 
 void main() {
   const host = String.fromEnvironment('LENKA_ORIGIN');
@@ -261,6 +262,29 @@ class _SavingsPageState extends State<SavingsPage> {
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(20),
               children: [
+                for (final total in savingsTotals(rows!))
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Mis ahorros · ${total.currency}'),
+                          Text(
+                            total.formatted,
+                            style: Theme.of(context).textTheme.headlineMedium,
+                          ),
+                          Text(
+                            '${total.deposits} depósitos activos o vencidos',
+                          ),
+                          const Text(
+                            'Capital vigente. No incluye intereses ni contratos cerrados.',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 20),
                 const Text(
                   'Capital vigente por depósito',
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
@@ -374,10 +398,7 @@ class _DepositPageState extends State<DepositPage> {
           );
         final data = snap.data!;
         final currency = data['currency'] as String? ?? '';
-        final interests = (data['interest_history'] as List? ?? []).where(
-          (x) => x['state'] == 'accrued' || x['state'] == 'paid',
-        );
-        final withdrawals = data['withdrawals'] as List? ?? [];
+        final movements = depositMovements(data, widget.id);
         return ListView(
           padding: const EdgeInsets.all(24),
           children: [
@@ -404,19 +425,13 @@ class _DepositPageState extends State<DepositPage> {
             ),
             const Divider(height: 40),
             Text('Movimientos', style: Theme.of(context).textTheme.titleLarge),
-            if (interests.isEmpty && withdrawals.isEmpty)
+            if (movements.isEmpty)
               const Text('No hay movimientos registrados.'),
-            for (final item in interests)
+            for (final item in movements)
               ListTile(
-                title: Text('Interés · ${stateLabel(item['state'])}'),
-                subtitle: Text('${item['date']}'),
-                trailing: Text(money(item['amount'], currency)),
-              ),
-            for (final item in withdrawals)
-              ListTile(
-                title: const Text('Retiro registrado'),
-                subtitle: Text('${item['date']}'),
-                trailing: Text(money(item['total_amount'], currency)),
+                title: Text(item.label),
+                subtitle: Text(displayDate(item.date)),
+                trailing: Text(money(item.amount, currency)),
               ),
           ],
         );
