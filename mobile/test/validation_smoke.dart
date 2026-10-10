@@ -31,6 +31,7 @@ Map<String, dynamic> detail() => {
 Map<String, dynamic> statement() => {
   'id': 5,
   'name': 'Estado de prueba',
+  'type': 'investment',
   'currency': 'USD',
   'state': 'generated',
   'opening_balance': 100,
@@ -81,5 +82,7 @@ void main() {
   rejects(() => validateStatements([statement()..['date_to'] = '2026-08-31']));
   rejects(() => validateStatements([statement()..['closing_balance'] = null]));
   rejects(() => validateStatements([statement()..['state'] = 'draft']));
+  rejects(() => validateStatements([statement()..remove('type')]));
+  rejects(() => validateStatements([statement()..['type'] = 'unknown']));
   print('PASS: $passed financial response validation checks.');
 }
