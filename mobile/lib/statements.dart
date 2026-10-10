@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
-import 'presentation.dart' show money, displayDate;
+import 'presentation.dart';
 
 class StatementsPage extends StatefulWidget {
   const StatementsPage({super.key, required this.repository});
@@ -12,6 +12,7 @@ class StatementsPage extends StatefulWidget {
 
 class _StatementsPageState extends State<StatementsPage> {
   late Future<List<Map<String, dynamic>>> pending;
+  StatementCategory category = StatementCategory.all;
   @override
   void initState() {
     super.initState();
@@ -69,21 +70,40 @@ class _StatementsPageState extends State<StatementsPage> {
             ),
           );
         }
-        final rows = snapshot.data!;
-        if (rows.isEmpty)
+        final data = snapshot.data!;
+        if (data.isEmpty)
           return const Center(
             child: Padding(
               padding: EdgeInsets.all(24),
               child: Text('Todavía no tenés estados de cuenta emitidos.'),
             ),
           );
+        final rows = statementRows(data, category);
         return ListView(
           padding: const EdgeInsets.all(20),
           children: [
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final option in StatementCategory.values)
+                  ChoiceChip(
+                    label: Text(switch (option) {
+                      StatementCategory.all => 'Todos',
+                      StatementCategory.savings => 'Ahorros',
+                      StatementCategory.credit => 'Créditos',
+                    }),
+                    selected: category == option,
+                    onSelected: (_) => setState(() => category = option),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
             const Text(
               'Los saldos corresponden al cierre del período indicado; pueden diferir del saldo actual.',
             ),
             const SizedBox(height: 16),
+            if (rows.isEmpty)
+              const Text('No hay estados de cuenta de esta categoría.'),
             for (final row in rows)
               Card(
                 child: Padding(
@@ -91,6 +111,7 @@ class _StatementsPageState extends State<StatementsPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Text(statementTypeLabel(row['type'] as String)),
                       Text(
                         row['name'] as String? ?? 'Estado de cuenta',
                         style: Theme.of(context).textTheme.titleMedium,
