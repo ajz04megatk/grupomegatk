@@ -78,6 +78,11 @@ class DelayedRepository extends FakeRepository {
   }
 }
 
+Finder savingsScroll() => find.byWidgetPredicate(
+  (widget) =>
+      widget is Scrollable && widget.axisDirection == AxisDirection.down,
+);
+
 void main() {
   testWidgets('Privacy cover starts closed if already in background', (
     tester,
@@ -149,18 +154,24 @@ void main() {
       MaterialApp(home: SavingsPage(repository: FakeRepository())),
     );
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.byType(TextField), 200);
+    await tester.scrollUntilVisible(
+      find.byType(TextField),
+      200,
+      scrollable: savingsScroll(),
+    );
     await tester.enterText(find.byType(TextField), 'Depósito A');
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
       find.widgetWithText(ChoiceChip, 'Dólares'),
       150,
+      scrollable: savingsScroll(),
     );
     await tester.tap(find.widgetWithText(ChoiceChip, 'Dólares'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
       find.text('No encontramos depósitos con esos filtros.'),
       150,
+      scrollable: savingsScroll(),
     );
     expect(
       find.text('No encontramos depósitos con esos filtros.'),
@@ -302,7 +313,11 @@ void main() {
       expect(find.text('HNL 25,000.00'), findsWidgets);
       expect(find.text('USD 1,000.00'), findsWidgets);
       expect(find.textContaining('26,000'), findsNothing);
-      await tester.scrollUntilVisible(find.text('Depósito A\nActivo'), 250);
+      await tester.scrollUntilVisible(
+        find.text('Depósito A\nActivo'),
+        250,
+        scrollable: savingsScroll(),
+      );
       await tester.tap(find.text('Depósito A\nActivo'));
       await tester.pumpAndSettle();
       expect(find.text('Intereses históricos: HNL 500.00'), findsOneWidget);
