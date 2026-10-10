@@ -88,9 +88,7 @@ class OdooSavingsRepository implements SavingsRepository {
           'No pudimos consultar Lenka. Intentá nuevamente.',
         );
       }
-      final body = await utf8.decoder
-          .bind(response)
-          .join()
+      final body = await _readBody(response)
           .timeout(const Duration(seconds: 20));
       if (generation != _generation)
         throw const LenkaFailure('Sesión cerrada.', sessionExpired: true);
@@ -117,7 +115,7 @@ class OdooSavingsRepository implements SavingsRepository {
       if (!envelope.containsKey('result')) throw const FormatException();
       if (authenticate) {
         final result = envelope['result'];
-        if (result is! Map || result['uid'] is! int) {
+        if (result is! Map || result['uid'] is! int || result['uid'] <= 0) {
           throw const LenkaFailure('Correo o contraseña incorrectos.');
         }
         for (final cookie in response.cookies) {
@@ -138,6 +136,21 @@ class OdooSavingsRepository implements SavingsRepository {
         'No pudimos conectar. Revisá tu conexión y volvé a intentar.',
       );
     }
+  }
+
+  // Bound decoded response bytes before JSON parsing, including chunked bodies.
+  Future<String> _readBody(HttpClientResponse response) async {
+    const limit = 4 * 1024 * 1024;
+    final bytes = <int>[];
+    await for (final chunk in response) {
+      if (bytes.length + chunk.length > limit) {
+        throw const LenkaFailure(
+          'La consulta contiene demasiada información. Contactá a Lenka para revisar tu historial.',
+        );
+      }
+      bytes.addAll(chunk);
+    }
+    return utf8.decode(bytes);
   }
 
   @override
