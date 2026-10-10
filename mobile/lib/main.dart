@@ -53,6 +53,8 @@ class _LenkaAppState extends State<LenkaApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     timer?.cancel();
+    idle.stop();
+    sessions?.logout();
     clock.stop();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();

@@ -27,6 +27,16 @@ class Repository implements SavingsRepository {
   Future<List<Map<String, dynamic>>> statements() => investments();
 }
 
+class DelayedLoginRepository extends Repository {
+  final logins = <Completer<void>>[];
+  @override
+  Future<void> login(String email, String password) {
+    final pending = Completer<void>();
+    logins.add(pending);
+    return pending.future;
+  }
+}
+
 void check(bool value, String message) {
   if (!value) throw StateError(message);
 }
@@ -74,5 +84,28 @@ Future<void> main() async {
   ]);
   check(await lateSuccess, 'Private data returned after logout');
   check(delegate.logouts == 2, 'Logout not forwarded');
-  print('PASS: 10 session-boundary checks. No network used.');
+  final delayed = DelayedLoginRepository();
+  final other = SessionBoundary(delayed, onExpired: (_) => expirations++);
+  final cancelledLogin = rejected(other.login('test', 'test'));
+  await other.logout();
+  delayed.logins.last.complete();
+  check(await cancelledLogin, 'Late authentication survived logout');
+  check(
+    await rejected(other.investments()),
+    'Late authentication restored access',
+  );
+  final firstLogin = rejected(other.login('first', 'test'));
+  final secondLogin = other.login('second', 'test');
+  delayed.logins.last.complete();
+  await secondLogin;
+  delayed.logins[1].complete();
+  check(await firstLogin, 'Older authentication replaced newer login');
+  final latestRead = other.investments();
+  delayed.reads.last.complete([]);
+  check(
+    (await latestRead).isEmpty,
+    'New session lost after old login completed',
+  );
+  await other.logout();
+  print('PASS: 14 session-boundary checks. No network used.');
 }

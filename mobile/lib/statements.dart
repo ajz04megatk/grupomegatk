@@ -154,6 +154,8 @@ class _PrivacyCoverState extends State<PrivacyCover>
   @override
   void initState() {
     super.initState();
+    hidden =
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed;
     WidgetsBinding.instance.addObserver(this);
   }
 

@@ -79,6 +79,21 @@ class DelayedRepository extends FakeRepository {
 }
 
 void main() {
+  testWidgets('Privacy cover starts closed if already in background', (
+    tester,
+  ) async {
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: PrivacyCover(child: Text('Private initial balance')),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('Lenka · Tu información es privada'), findsOneWidget);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(find.text('Lenka · Tu información es privada'), findsNothing);
+  });
   testWidgets('Revoked access returns to login without an extra tap', (
     tester,
   ) async {
