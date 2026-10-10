@@ -1,5 +1,33 @@
 import 'validation.dart';
 
+enum StatementCategory { all, savings, credit }
+
+String statementTypeLabel(String type) => switch (type) {
+  'investment' => 'Ahorros / depósitos',
+  'operation' => 'Préstamos / financiamientos / arrendamientos',
+  _ => 'Tipo no disponible',
+};
+
+List<Map<String, dynamic>> statementRows(
+  List<Map<String, dynamic>> data,
+  StatementCategory category,
+) {
+  final rows = validateStatements(data)
+      .where(
+        (row) => switch (category) {
+          StatementCategory.all => true,
+          StatementCategory.savings => row['type'] == 'investment',
+          StatementCategory.credit => row['type'] == 'operation',
+        },
+      )
+      .toList();
+  rows.sort((a, b) {
+    final date = (b['date_to'] as String).compareTo(a['date_to'] as String);
+    return date != 0 ? date : (b['id'] as int).compareTo(a['id'] as int);
+  });
+  return rows;
+}
+
 class SavingsTotal {
   SavingsTotal(this.currency, this.minorUnits, this.deposits);
   final String currency;
