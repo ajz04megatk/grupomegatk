@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'brand.dart';
 import 'idle_policy.dart';
+import 'session_boundary.dart';
 import 'statements.dart';
 import 'presentation.dart';
 export 'presentation.dart' show money;
@@ -36,11 +37,15 @@ class _LenkaAppState extends State<LenkaApp> with WidgetsBindingObserver {
   final clock = Stopwatch()..start();
   final idle = IdlePolicy();
   Timer? timer;
+  SessionBoundary? sessions;
   Duration get elapsed => widget.elapsed?.call() ?? clock.elapsed;
 
   @override
   void initState() {
     super.initState();
+    if (widget.repository != null) {
+      sessions = SessionBoundary(widget.repository!, onExpired: endSession);
+    }
     WidgetsBinding.instance.addObserver(this);
     timer = Timer.periodic(const Duration(seconds: 1), (_) => checkIdle());
   }
@@ -55,15 +60,20 @@ class _LenkaAppState extends State<LenkaApp> with WidgetsBindingObserver {
 
   void checkIdle() {
     if (!mounted || !idle.expired(elapsed)) return;
+    endSession(
+      'Cerramos tu sesión después de 5 minutos sin actividad. Ingresá nuevamente.',
+    );
+  }
+
+  void endSession(String message) {
+    if (!mounted) return;
     idle.stop();
-    widget.repository?.logout();
+    sessions?.logout();
     navigator.currentState?.pushAndRemoveUntil(
       PageRouteBuilder<void>(
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
-        pageBuilder: (_, __, ___) => loginPage(
-          message: 'Cerramos tu sesión después de 5 minutos sin actividad. Ingresá nuevamente.',
-        ),
+        pageBuilder: (_, __, ___) => loginPage(message: message),
       ),
       (_) => false,
     );
@@ -80,7 +90,7 @@ class _LenkaAppState extends State<LenkaApp> with WidgetsBindingObserver {
   }
 
   Widget loginPage({String? message}) => LoginPage(
-    repository: widget.repository!,
+    repository: sessions!,
     initialMessage: message,
     onAuthenticated: () => idle.start(elapsed),
     onSessionEnded: idle.stop,
@@ -349,7 +359,9 @@ class _SavingsPageState extends State<SavingsPage> {
     } on LenkaFailure catch (e) {
       if (!mounted || version != refreshVersion) return;
       if (e.sessionExpired) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
+        if (widget.repository is! SessionBoundary) {
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        }
         return;
       }
       setState(() => error = e.message);

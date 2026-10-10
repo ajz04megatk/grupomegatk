@@ -12,6 +12,7 @@ import 'statements_smoke.dart' show statementFixture;
 class FakeRepository implements SavingsRepository {
   int logouts = 0;
   bool fail = false;
+  bool accessExpired = false;
   List<Map<String, dynamic>> statementData = [];
   @override
   Future<void> login(String email, String password) async {}
@@ -22,6 +23,8 @@ class FakeRepository implements SavingsRepository {
 
   @override
   Future<List<Map<String, dynamic>>> investments() async {
+    if (accessExpired)
+      throw const LenkaFailure('Acceso deshabilitado.', sessionExpired: true);
     if (fail) throw const LenkaFailure('Sin conexión');
     return [
       {
@@ -76,6 +79,26 @@ class DelayedRepository extends FakeRepository {
 }
 
 void main() {
+  testWidgets('Revoked access returns to login without an extra tap', (
+    tester,
+  ) async {
+    final repository = FakeRepository();
+    await tester.pumpWidget(LenkaApp(repository: repository));
+    await tester.enterText(
+      find.byType(TextField).first,
+      'client@example.invalid',
+    );
+    await tester.enterText(find.byType(TextField).last, 'fictional');
+    await tester.tap(find.text('Ingresar'));
+    await tester.pumpAndSettle();
+    repository.accessExpired = true;
+    await tester.tap(find.byTooltip('Actualizar'));
+    await tester.pumpAndSettle();
+    expect(find.text('Mis ahorros'), findsNothing);
+    expect(find.text('Acceso deshabilitado.'), findsOneWidget);
+    expect(find.text('Ingresar'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
   testWidgets(
     'Login guides missing fields and masks password after backgrounding',
     (tester) async {

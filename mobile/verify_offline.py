@@ -20,9 +20,9 @@ def main():
     if hashlib.sha256(icon.read_bytes()).hexdigest() != expected:
         raise SystemExit('FAIL: official icon differs from the approved source.')
     suites = ['api_smoke', 'session_smoke', 'response_smoke', 'validation_smoke',
-              'presentation_smoke', 'statements_smoke', 'idle_smoke']
+              'presentation_smoke', 'statements_smoke', 'idle_smoke', 'boundary_smoke']
     sources = ['lib/api.dart', 'lib/validation.dart', 'lib/presentation.dart',
-               'lib/idle_policy.dart'] + [f'test/{suite}.dart' for suite in suites]
+               'lib/idle_policy.dart', 'lib/session_boundary.dart'] + [f'test/{suite}.dart' for suite in suites]
     commands = [[str(dart), 'analyze', *sources]]
     commands.extend([str(dart), f'test/{suite}.dart'] for suite in suites)
     commands.append([sys.executable, '-m', 'unittest', 'discover',
