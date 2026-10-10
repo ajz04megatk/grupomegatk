@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'brand.dart';
 import 'statements.dart';
 import 'presentation.dart';
 export 'presentation.dart' show money;
@@ -28,11 +29,7 @@ class LenkaApp extends StatelessWidget {
         PrivacyCover(child: child ?? const SizedBox.shrink()),
     title: 'Lenka',
     debugShowCheckedModeBanner: false,
-    theme: ThemeData(
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff075e88)),
-      scaffoldBackgroundColor: const Color(0xfff4f7fa),
-    ),
+    theme: LenkaBrand.theme,
     home: repository == null
         ? const Scaffold(
             body: Center(
