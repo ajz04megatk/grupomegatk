@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'statements.dart';
 import 'presentation.dart';
+export 'presentation.dart' show money;
 
 void main() {
   const host = String.fromEnvironment('LENKA_ORIGIN');
@@ -16,17 +17,6 @@ void main() {
     }
   }
   runApp(LenkaApp(repository: repository));
-}
-
-String money(dynamic amount, String currency) {
-  if (amount is! num || !amount.isFinite || currency.isEmpty)
-    return 'No disponible';
-  final parts = amount.toStringAsFixed(2).split('.');
-  final integer = parts[0].replaceAllMapped(
-    RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
-    (m) => '${m[1]},',
-  );
-  return '$currency $integer.${parts[1]}';
 }
 
 class LenkaApp extends StatelessWidget {
@@ -87,8 +77,11 @@ class _LoginPageState extends State<LoginPage> {
     });
     try {
       await widget.repository.login(email.text, password.text);
+      if (!mounted) {
+        await widget.repository.logout();
+        return;
+      }
       password.clear();
-      if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => SavingsPage(repository: widget.repository),
@@ -97,8 +90,10 @@ class _LoginPageState extends State<LoginPage> {
     } on LenkaFailure catch (e) {
       if (mounted) setState(() => error = e.message);
     } finally {
-      password.clear();
-      if (mounted) setState(() => busy = false);
+      if (mounted) {
+        password.clear();
+        setState(() => busy = false);
+      }
     }
   }
 
@@ -177,6 +172,7 @@ class SavingsPage extends StatefulWidget {
 class _SavingsPageState extends State<SavingsPage> {
   List<Map<String, dynamic>>? rows;
   bool busy = true;
+  int refreshVersion = 0;
   String? error;
   @override
   void initState() {
@@ -191,6 +187,7 @@ class _SavingsPageState extends State<SavingsPage> {
   }
 
   Future<void> refresh() async {
+    final version = ++refreshVersion;
     setState(() {
       busy = true;
       rows = null;
@@ -198,16 +195,26 @@ class _SavingsPageState extends State<SavingsPage> {
     });
     try {
       final result = await widget.repository.investments();
-      if (mounted) setState(() => rows = result);
+      if (mounted && version == refreshVersion) {
+        setState(() => rows = result);
+      }
     } on LenkaFailure catch (e) {
-      if (!mounted) return;
+      if (!mounted || version != refreshVersion) return;
       if (e.sessionExpired) {
-        Navigator.of(context).pop();
+        Navigator.of(context).popUntil((route) => route.isFirst);
         return;
       }
       setState(() => error = e.message);
+    } catch (_) {
+      if (mounted && version == refreshVersion) {
+        setState(
+          () => error = 'No pudimos consultar tus ahorros. Volvé a intentar.',
+        );
+      }
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted && version == refreshVersion) {
+        setState(() => busy = false);
+      }
     }
   }
 
