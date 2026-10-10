@@ -105,7 +105,7 @@ class _LoginPageState extends State<LoginPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Icon(Icons.account_balance_outlined, size: 56),
+                const Center(child: LenkaLogo()),
                 const SizedBox(height: 16),
                 Text(
                   'Bienvenido a Lenka',
@@ -118,10 +118,12 @@ class _LoginPageState extends State<LoginPage> {
                   enabled: !busy,
                   keyboardType: TextInputType.emailAddress,
                   autocorrect: false,
+                  textInputAction: TextInputAction.next,
                   decoration: const InputDecoration(
                     labelText: 'Correo electrónico',
                   ),
                 ),
+                const SizedBox(height: 16),
                 TextField(
                   controller: password,
                   enabled: !busy,

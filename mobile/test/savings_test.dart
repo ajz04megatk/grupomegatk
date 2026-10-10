@@ -71,6 +71,14 @@ class DelayedRepository extends FakeRepository {
 }
 
 void main() {
+  testWidgets('Login displays the official Lenka asset', (tester) async {
+    await tester.pumpWidget(LenkaApp(repository: FakeRepository()));
+    await tester.pumpAndSettle();
+    final image = tester.widget<Image>(find.byType(Image));
+    expect(image.image, const AssetImage(LenkaBrand.iconAsset));
+    expect(image.semanticLabel, 'Inversiones Lenka');
+    expect(tester.takeException(), isNull);
+  });
   test('Official Lenka colors define the interface', () {
     final theme = LenkaBrand.theme;
     expect(theme.colorScheme.primary, LenkaBrand.sky);

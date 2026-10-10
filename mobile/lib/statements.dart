@@ -181,10 +181,17 @@ class _PrivacyCoverState extends State<PrivacyCover>
           child: ColoredBox(
             color: LenkaBrand.ivory,
             child: Center(
-              child: Text(
-                'Lenka · Tu información es privada',
-                textDirection: TextDirection.ltr,
-                style: TextStyle(color: LenkaBrand.ink, fontSize: 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  LenkaLogo(size: 88),
+                  SizedBox(height: 16),
+                  Text(
+                    'Lenka · Tu información es privada',
+                    textDirection: TextDirection.ltr,
+                    style: TextStyle(color: LenkaBrand.ink, fontSize: 20),
+                  ),
+                ],
               ),
             ),
           ),

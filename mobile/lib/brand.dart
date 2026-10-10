@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 /// Representative colors sampled from the official textured Lenka icon.
 /// The source image has tonal variations, so these are interface base colors.
 abstract final class LenkaBrand {
+  static const iconAsset = 'assets/lenka-icon.png';
   static const sky = Color(0xff85c6e7);
   static const ink = Color(0xff1a1a18);
   static const ivory = Color(0xffedebe6);
@@ -51,4 +52,18 @@ abstract final class LenkaBrand {
       ),
     );
   }
+}
+
+class LenkaLogo extends StatelessWidget {
+  const LenkaLogo({super.key, this.size = 104});
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Image.asset(
+    LenkaBrand.iconAsset,
+    width: size,
+    height: size,
+    fit: BoxFit.contain,
+    semanticLabel: 'Inversiones Lenka',
+  );
 }
