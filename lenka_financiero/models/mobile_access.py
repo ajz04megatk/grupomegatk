@@ -42,20 +42,28 @@ class ResPartnerLenkaMobile(models.Model):
         self._check_mobile_manager()
         group = self.env.ref('lenka_financiero.group_lenka_mobile_client')
         portal_group = self.env.ref('base.group_portal')
-        Users = self.env['res.users'].sudo()
+        Users = self.env['res.users'].sudo().with_context(active_test=False)
         for partner in self:
-            if not partner.email:
+            if not partner.email or not partner.email.strip():
                 raise ValidationError(_('El cliente debe tener un correo electronico antes de habilitar la app Lenka.'))
             user = Users.search([('partner_id', '=', partner.id)], limit=1)
             if not user:
+                if Users.search([('login', '=ilike', partner.email.strip())], limit=1):
+                    raise ValidationError(_('Este correo ya corresponde a otro usuario. Revise el contacto y la cuenta antes de habilitar el acceso.'))
                 user = Users.with_context(no_reset_password=True).create({
                     'name': partner.name,
-                    'login': partner.email,
+                    'login': partner.email.strip(),
                     'email': partner.email,
                     'partner_id': partner.id,
+                    'company_id': self.env.company.id,
+                    'company_ids': [(6, 0, [self.env.company.id])],
                     'groups_id': [(6, 0, [portal_group.id, group.id])],
                 })
             else:
+                if not user.active:
+                    raise ValidationError(_('La cuenta del cliente esta archivada. Un administrador debe revisarla antes de habilitar la app.'))
+                if self.env.company not in user.company_ids:
+                    raise ValidationError(_('La cuenta no tiene autorizada la empresa seleccionada. Un administrador debe revisar sus empresas permitidas; habilitar la app no amplia esos permisos.'))
                 # An internal operator must not be assigned the incompatible portal role.
                 groups = [(4, group.id)]
                 if user.share:

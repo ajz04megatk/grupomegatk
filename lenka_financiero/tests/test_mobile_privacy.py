@@ -1,5 +1,5 @@
 from odoo import fields
-from odoo.exceptions import AccessError
+from odoo.exceptions import AccessError, ValidationError
 from odoo.tests.common import TransactionCase
 
 
@@ -86,3 +86,44 @@ class TestMobilePrivacy(TransactionCase):
         })
         with self.assertRaises(AccessError):
             self.env['lenka.mobile.service'].with_user(self.user).get_my_operation_detail(operation.id)
+
+    def test_mobile_client_has_no_direct_financial_write_access(self):
+        record = self.investment(self.client)
+        with self.assertRaises(AccessError):
+            record.with_user(self.user).write({'principal_amount': 2000})
+        with self.assertRaises(AccessError):
+            self.env['lenka.investment'].with_user(self.user).create({
+                'partner_id': self.client.id, 'principal_amount': 1000,
+                'passive_rate': 0, 'investment_type': 'current',
+            })
+
+    def test_new_mobile_user_is_limited_to_selected_company(self):
+        company = self.env['res.company'].create({'name': 'Mobile onboarding company'})
+        partner = self.env['res.partner'].create({
+            'name': 'Fictional new client', 'email': 'new-mobile@example.invalid',
+        })
+        partner.sudo().with_company(company).action_enable_lenka_mobile()
+        user = self.env['res.users'].sudo().search([('partner_id', '=', partner.id)])
+        self.assertEqual(user.company_id, company)
+        self.assertEqual(user.company_ids, company)
+        self.assertTrue(user.has_group('base.group_portal'))
+        self.assertFalse(user.has_group('lenka_financiero.group_lenka_user'))
+
+    def test_enabling_existing_user_does_not_add_company(self):
+        self.client.email = 'mobile-privacy-test@example.invalid'
+        company = self.env['res.company'].create({'name': 'Not authorized for client'})
+        before = self.user.company_ids
+        with self.assertRaises(ValidationError):
+            self.client.sudo().with_company(company).action_enable_lenka_mobile()
+        self.assertEqual(self.user.company_ids, before)
+
+    def test_archived_user_is_not_silently_replaced(self):
+        self.client.email = 'mobile-privacy-test@example.invalid'
+        self.user.active = False
+        with self.assertRaises(ValidationError):
+            self.client.sudo().action_enable_lenka_mobile()
+
+    def test_login_owned_by_another_contact_is_not_reused(self):
+        self.other.email = self.user.login
+        with self.assertRaises(ValidationError):
+            self.other.sudo().action_enable_lenka_mobile()

@@ -44,5 +44,7 @@ python verify_offline.py --dart /RUTA/AL/SDK/dart
 
 En Windows usar la ruta completa a `dart.exe`. El comando verifica el ícono
 original, analiza los módulos Dart independientes, ejecuta ocho suites Dart y
-nueve pruebas Python. No compila APK/IPA, no instala nada y no valida pantallas
+catorce pruebas Python y una comprobación del contrato de datos Python/Dart. No compila APK/IPA, no instala nada y no valida pantallas
 ni las reglas de acceso del ORM de Odoo. Esas comprobaciones siguen pendientes.
+
+El estado y los requisitos para continuar están en `RELEASE_READINESS.md`.
