@@ -4,6 +4,7 @@ import hashlib
 from pathlib import Path
 import subprocess
 import sys
+from tempfile import TemporaryDirectory
 
 
 def main():
@@ -22,7 +23,7 @@ def main():
     suites = ['api_smoke', 'session_smoke', 'response_smoke', 'validation_smoke',
               'presentation_smoke', 'statements_smoke', 'idle_smoke', 'boundary_smoke']
     sources = ['lib/api.dart', 'lib/validation.dart', 'lib/presentation.dart',
-               'lib/idle_policy.dart', 'lib/session_boundary.dart'] + [f'test/{suite}.dart' for suite in suites]
+               'lib/idle_policy.dart', 'lib/session_boundary.dart', 'test/contract_smoke.dart'] + [f'test/{suite}.dart' for suite in suites]
     commands = [[str(dart), 'analyze', *sources]]
     commands.extend([str(dart), f'test/{suite}.dart'] for suite in suites)
     commands.append([sys.executable, '-m', 'unittest', 'discover',
@@ -31,6 +32,11 @@ def main():
         result = subprocess.run(command, cwd=root, check=False)
         if result.returncode:
             raise SystemExit(result.returncode)
+    with TemporaryDirectory(prefix='lenka-contract-') as temporary:
+        fixture = str(Path(temporary) / 'fictional-payload.json')
+        subprocess.run([sys.executable, str(root.parent / 'mobile-tests/service_contract_fixture.py'), fixture],
+                       cwd=root, check=True)
+        subprocess.run([str(dart), 'test/contract_smoke.dart', fixture], cwd=root, check=True)
     print('PASS: SDK-only checks and original icon verification.')
     print('NOT RUN: Flutter/widgets, Odoo integration, Android/iOS builds or device checks.')
 
