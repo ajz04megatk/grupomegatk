@@ -1,5 +1,39 @@
 import 'validation.dart';
 
+List<Map<String, dynamic>> filterDeposits(
+  List<Map<String, dynamic>> data, {
+  String query = '',
+  String? currency,
+}) {
+  if (currency != null && !const {'HNL', 'USD'}.contains(currency)) {
+    throw ArgumentError.value(currency);
+  }
+  String normalize(String value) {
+    var text = value.toLowerCase().trim();
+    const accents = {
+      'á': 'a',
+      'é': 'e',
+      'í': 'i',
+      'ó': 'o',
+      'ú': 'u',
+      'ü': 'u',
+    };
+    accents.forEach(
+      (key, replacement) => text = text.replaceAll(key, replacement),
+    );
+    return text;
+  }
+
+  final terms = normalize(query)
+      .split(RegExp(r'\s+'))
+      .where((term) => term.isNotEmpty);
+  return validateDeposits(data).where((row) {
+    if (currency != null && row['currency'] != currency) return false;
+    final name = normalize(row['name'] as String);
+    return terms.every(name.contains);
+  }).toList();
+}
+
 enum StatementCategory { all, savings, credit }
 
 String statementTypeLabel(String type) => switch (type) {

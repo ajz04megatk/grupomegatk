@@ -253,6 +253,13 @@ class SavingsPage extends StatefulWidget {
 }
 
 class _SavingsPageState extends State<SavingsPage> {
+  final search = TextEditingController();
+  String? selectedCurrency;
+  List<Map<String, dynamic>> get visibleRows => filterDeposits(
+    rows ?? [],
+    query: search.text,
+    currency: selectedCurrency,
+  );
   List<Map<String, dynamic>>? rows;
   bool busy = true;
   int refreshVersion = 0;
@@ -265,6 +272,7 @@ class _SavingsPageState extends State<SavingsPage> {
 
   @override
   void dispose() {
+    search.dispose();
     widget.repository.logout();
     super.dispose();
   }
@@ -383,11 +391,52 @@ class _SavingsPageState extends State<SavingsPage> {
                   'Los importes conservan su moneda. El capital a plazo está sujeto a las condiciones de tu contrato.',
                 ),
                 const SizedBox(height: 20),
+                TextField(
+                  controller: search,
+                  onChanged: (_) => setState(() {}),
+                  autocorrect: false,
+                  decoration: InputDecoration(
+                    labelText: 'Buscar depósito por nombre o referencia',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: search.text.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Limpiar búsqueda',
+                            icon: const Icon(Icons.clear),
+                            onPressed: () => setState(search.clear),
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final currency in <String?>[null, 'HNL', 'USD'])
+                      ChoiceChip(
+                        label: Text(
+                          currency == null
+                              ? 'Todas las monedas'
+                              : currency == 'HNL'
+                              ? 'Lempiras'
+                              : 'Dólares',
+                        ),
+                        selected: selectedCurrency == currency,
+                        onSelected: (_) =>
+                            setState(() => selectedCurrency = currency),
+                      ),
+                  ],
+                ),
+                const Text(
+                  'Los totales superiores incluyen todos tus depósitos vigentes, aunque filtres esta lista.',
+                ),
+                const SizedBox(height: 16),
                 if (rows!.isEmpty)
                   const Text(
                     'Todavía no tenés depósitos registrados para consultar.',
                   ),
-                for (final row in rows!)
+                if (rows!.isNotEmpty && visibleRows.isEmpty)
+                  const Text('No encontramos depósitos con esos filtros.'),
+                for (final row in visibleRows)
                   Card(
                     child: ListTile(
                       contentPadding: const EdgeInsets.all(16),

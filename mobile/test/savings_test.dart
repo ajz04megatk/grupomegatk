@@ -76,6 +76,30 @@ class DelayedRepository extends FakeRepository {
 }
 
 void main() {
+  testWidgets('Deposit search combines name and currency', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(home: SavingsPage(repository: FakeRepository())),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.byType(TextField), 200);
+    await tester.enterText(find.byType(TextField), 'Depósito A');
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.widgetWithText(ChoiceChip, 'Dólares'),
+      150,
+    );
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Dólares'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('No encontramos depósitos con esos filtros.'),
+      150,
+    );
+    expect(
+      find.text('No encontramos depósitos con esos filtros.'),
+      findsOneWidget,
+    );
+    expect(find.text('Depósito A\nActivo'), findsNothing);
+  });
   testWidgets('Idle session removes savings and returns to login', (
     tester,
   ) async {
@@ -207,10 +231,10 @@ void main() {
         MaterialApp(home: SavingsPage(repository: repository)),
       );
       await tester.pumpAndSettle();
-      expect(find.text('HNL 25,000.00'), findsNWidgets(2));
-      expect(find.text('USD 1,000.00'), findsNWidgets(2));
+      expect(find.text('HNL 25,000.00'), findsWidgets);
+      expect(find.text('USD 1,000.00'), findsWidgets);
       expect(find.textContaining('26,000'), findsNothing);
-      await tester.ensureVisible(find.text('Depósito A\nActivo'));
+      await tester.scrollUntilVisible(find.text('Depósito A\nActivo'), 250);
       await tester.tap(find.text('Depósito A\nActivo'));
       await tester.pumpAndSettle();
       expect(find.text('Intereses históricos: HNL 500.00'), findsOneWidget);

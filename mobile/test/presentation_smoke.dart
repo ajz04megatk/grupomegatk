@@ -31,6 +31,33 @@ void main() {
     deposit(4, 'USD', 8000, state: 'closed'),
   ];
   final totals = savingsTotals(rows);
+  check(
+    filterDeposits(rows, currency: 'USD').length == 2,
+    'Currency filter dropped history',
+  );
+  check(
+    filterDeposits(rows, query: '  TEST  1 ').single['id'] == 1,
+    'Search normalization failed',
+  );
+  check(
+    filterDeposits(rows, currency: 'HNL', query: 'Test 2').isEmpty,
+    'Combined filters ignored',
+  );
+  check(
+    filterDeposits(rows).length == rows.length,
+    'Empty filter changed list',
+  );
+  check(
+    filterDeposits([
+          deposit(9, 'HNL', 1)..['name'] = 'Depósito Nómina',
+        ], query: 'nomina deposito').single['id'] ==
+        9,
+    'Spanish search failed',
+  );
+  check(
+    savingsTotals(rows)[1].formatted == totals[1].formatted,
+    'Filtering altered portfolio total',
+  );
   check(totals.length == 2, 'Mixed currencies combined');
   check(totals[0].formatted == 'HNL 30,000.00', 'HNL total incorrect');
   check(
@@ -103,6 +130,6 @@ void main() {
     'Source mutated',
   );
   print(
-    'PASS: 25 formatting, savings summary, conditions and movement presentation checks.',
+    'PASS: 31 filtering, formatting, savings summary, conditions and movement presentation checks.',
   );
 }
