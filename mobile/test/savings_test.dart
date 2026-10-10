@@ -6,9 +6,12 @@ import 'package:lenka_clientes/api.dart';
 import 'package:lenka_clientes/main.dart';
 import 'package:lenka_clientes/statements.dart';
 
+import 'statements_smoke.dart' show statementFixture;
+
 class FakeRepository implements SavingsRepository {
   int logouts = 0;
   bool fail = false;
+  List<Map<String, dynamic>> statementData = [];
   @override
   Future<void> login(String email, String password) async {}
   @override
@@ -38,7 +41,7 @@ class FakeRepository implements SavingsRepository {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> statements() async => [];
+  Future<List<Map<String, dynamic>>> statements() async => statementData;
   @override
   Future<Map<String, dynamic>> detail(int id) async => {
     'id': id,
@@ -67,6 +70,31 @@ class DelayedRepository extends FakeRepository {
 }
 
 void main() {
+  testWidgets(
+    'Statements distinguish savings and credit without mixing currencies',
+    (tester) async {
+      final repository = FakeRepository()
+        ..statementData = [
+          statementFixture(1, 'investment', 'HNL'),
+          statementFixture(2, 'operation', 'USD'),
+        ];
+      await tester.pumpWidget(
+        MaterialApp(home: StatementsPage(repository: repository)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Ahorros'));
+      await tester.pumpAndSettle();
+      expect(find.text('Estado 1'), findsOneWidget);
+      expect(find.text('Estado 2'), findsNothing);
+      expect(find.text('01/09/2026 — 30/09/2026'), findsOneWidget);
+      expect(find.text('Saldo al cierre: HNL 200.00'), findsOneWidget);
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Créditos'));
+      await tester.pumpAndSettle();
+      expect(find.text('Estado 1'), findsNothing);
+      expect(find.text('Estado 2'), findsOneWidget);
+      expect(find.text('Saldo al cierre: USD 200.00'), findsOneWidget);
+    },
+  );
   testWidgets('Leaving login during authentication closes late session', (
     tester,
   ) async {
