@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lenka_clientes/api.dart';
@@ -51,7 +53,64 @@ class FakeRepository implements SavingsRepository {
   };
 }
 
+class DelayedRepository extends FakeRepository {
+  final authentication = Completer<void>();
+  final reads = <Completer<List<Map<String, dynamic>>>>[];
+  @override
+  Future<void> login(String email, String password) => authentication.future;
+  @override
+  Future<List<Map<String, dynamic>>> investments() {
+    final result = Completer<List<Map<String, dynamic>>>();
+    reads.add(result);
+    return result.future;
+  }
+}
+
 void main() {
+  testWidgets('Leaving login during authentication closes late session', (
+    tester,
+  ) async {
+    final repository = DelayedRepository();
+    await tester.pumpWidget(LenkaApp(repository: repository));
+    await tester.enterText(
+      find.byType(TextField).first,
+      'test@example.invalid',
+    );
+    await tester.enterText(find.byType(TextField).last, 'fictional');
+    await tester.tap(find.text('Ingresar'));
+    await tester.pump();
+    await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+    repository.authentication.complete();
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(repository.logouts, 1);
+  });
+  testWidgets('Latest refresh wins when responses arrive out of order', (
+    tester,
+  ) async {
+    final repository = DelayedRepository();
+    await tester.pumpWidget(
+      MaterialApp(home: SavingsPage(repository: repository)),
+    );
+    repository.reads.first.complete([]);
+    await tester.pumpAndSettle();
+    final refresh = tester
+        .widget<RefreshIndicator>(find.byType(RefreshIndicator))
+        .onRefresh;
+    final older = refresh();
+    final newer = refresh();
+    repository.reads.last.complete([]);
+    await newer;
+    repository.reads[1].complete(await FakeRepository().investments());
+    await older;
+    await tester.pumpAndSettle();
+    expect(find.text('HNL 25,000.00'), findsNothing);
+    expect(
+      find.text('Todavía no tenés depósitos registrados para consultar.'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
   test('Currency is always explicit and missing amounts are not zero', () {
     expect(money(25000, 'HNL'), 'HNL 25,000.00');
     expect(money(1000, 'USD'), 'USD 1,000.00');
