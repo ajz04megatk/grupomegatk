@@ -51,7 +51,7 @@ void main() {
   }
   if (validateDeposits([]).isNotEmpty) throw StateError('Empty data changed');
   passed++;
-  for (final amount in [null, '1000', double.nan, double.infinity, -1]) {
+  for (final amount in [null, '1000', double.nan, double.infinity, 1e21, -1]) {
     rejects(
       () => validateDeposits([deposit()..['outstanding_principal'] = amount]),
     );
