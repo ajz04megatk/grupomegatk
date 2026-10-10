@@ -1,5 +1,28 @@
 # Próximos conectores y reserva en línea
 
+## Sincronización rápida y despliegue permanente
+
+La tarea programada de Odoo.sh funciona según disponibilidad y no garantiza
+menos de cinco minutos, incluso en producción. Staging reduce la frecuencia
+cuando la base está inactiva. Mantener el sondeo como conciliación de respaldo.
+
+Para reducir la espera: publicar cambios de O Dental tras confirmar la
+transacción y recibir eventos `item:added`, `item:updated`, `item:deleted`,
+`item:completed` y `item:uncompleted` mediante el webhook de Todoist. El
+webhook necesita aplicación registrada, URL HTTPS pública y autorización OAuth
+de la profesional; su token personal actual no habilita esas notificaciones.
+Verificar firma HMAC, identidad y organización de cada evento, evitar bucles y
+duplicados, y volver a consultar Todoist en vez de confiar en datos de un
+evento retrasado o fuera de orden. Conservar la prioridad de la hora elegida
+por la doctora y la señal de conflicto, sin mover silenciosamente pacientes.
+
+La activación para pacientes reales queda separada del despliegue de código:
+`export_all_patients` empieza desactivado. Confirmar expresamente el envío a
+Todoist de nombre, servicio general y horario para todas las citas futuras
+de MegaSmile antes de activarlo. Una reconstrucción de staging copia otra vez
+producción y puede perder la conexión y token de esta prueba; preparar una
+nueva prueba y autorización OAuth sin interrumpir el piloto actual.
+
 La cita clínica vive en `odental.appointment`. El profesional decide la hora
 desde su agenda personal cuando la conexión está activa; recepción también
 puede editarla en O Dental. Si ambos lados cambian la hora antes de conciliar,
