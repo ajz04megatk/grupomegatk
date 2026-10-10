@@ -85,3 +85,18 @@ List<DepositMovement> depositMovements(Map<String, dynamic> data, int id) {
   });
   return result;
 }
+
+String money(dynamic amount, String currency) {
+  if (amount is! num ||
+      !amount.isFinite ||
+      amount.abs() >= 1e21 ||
+      !const ['HNL', 'USD'].contains(currency))
+    return 'No disponible';
+  final fixed = amount.toStringAsFixed(2);
+  final parts = (fixed == '-0.00' ? '0.00' : fixed).split('.');
+  final integer = parts[0].replaceAllMapped(
+    RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+    (m) => '${m[1]},',
+  );
+  return '$currency $integer.${parts[1]}';
+}
