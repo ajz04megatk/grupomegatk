@@ -39,6 +39,8 @@ class FakeRepository implements SavingsRepository {
   Future<List<Map<String, dynamic>>> statements() async => [];
   @override
   Future<Map<String, dynamic>> detail(int id) async => {
+    'id': id,
+    'state': 'active',
     'name': 'Depósito A',
     'currency': 'HNL',
     'outstanding_principal': 25000,
@@ -73,10 +75,11 @@ void main() {
         MaterialApp(home: SavingsPage(repository: repository)),
       );
       await tester.pumpAndSettle();
-      expect(find.text('HNL 25,000.00'), findsOneWidget);
-      expect(find.text('USD 1,000.00'), findsOneWidget);
+      expect(find.text('HNL 25,000.00'), findsNWidgets(2));
+      expect(find.text('USD 1,000.00'), findsNWidgets(2));
       expect(find.textContaining('26,000'), findsNothing);
-      await tester.tap(find.text('HNL 25,000.00'));
+      await tester.ensureVisible(find.text('Depósito A\nActivo'));
+      await tester.tap(find.text('Depósito A\nActivo'));
       await tester.pumpAndSettle();
       expect(find.text('Intereses históricos: HNL 500.00'), findsOneWidget);
       expect(
