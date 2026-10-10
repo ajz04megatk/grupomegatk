@@ -125,6 +125,21 @@ Future<void> main() async {
     'test',
     clientFactory: () => client,
   );
+  for (final credentials in [
+    ['   ', 'fictional'],
+    ['client@example.invalid', ''],
+  ]) {
+    var rejected = false;
+    try {
+      await repository.login(credentials[0], credentials[1]);
+    } on LenkaFailure {
+      rejected = true;
+    }
+    check(
+      rejected && client.requests.isEmpty,
+      'Empty credentials reached server',
+    );
+  }
   await login(repository, client, 'first-session');
   final pending = expired(repository.investments());
   await tick();
@@ -187,6 +202,6 @@ Future<void> main() async {
     'Late cookie restored a session',
   );
   print(
-    'PASS: logout during read/open/login, remote logout, revoked access and redirect protection. No network used.',
+    'PASS: blank credentials blocked, logout during read/open/login, remote logout, revoked access and redirect protection. No network used.',
   );
 }

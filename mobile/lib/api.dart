@@ -155,6 +155,9 @@ class OdooSavingsRepository implements SavingsRepository {
 
   @override
   Future<void> login(String email, String password) async {
+    if (email.trim().isEmpty || password.isEmpty) {
+      throw const LenkaFailure('Completá tu correo y contraseña.');
+    }
     final cleanup = logout();
     final generation = _generation;
     await cleanup;

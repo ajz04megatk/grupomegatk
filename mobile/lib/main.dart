@@ -127,13 +127,33 @@ class LoginPage extends StatefulWidget {
   State<LoginPage> createState() => _LoginPageState();
 }
 
-class _LoginPageState extends State<LoginPage> {
+class _LoginPageState extends State<LoginPage> with WidgetsBindingObserver {
   final email = TextEditingController();
   final password = TextEditingController();
+  final emailFocus = FocusNode();
+  final passwordFocus = FocusNode();
+  bool showPassword = false;
+  bool attempted = false;
   bool busy = false;
   String? error;
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed && showPassword && mounted) {
+      setState(() => showPassword = false);
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    emailFocus.dispose();
+    passwordFocus.dispose();
     email.dispose();
     password.dispose();
     super.dispose();
@@ -141,12 +161,16 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> submit() async {
     if (busy) return;
+    setState(() => attempted = true);
     if (email.text.trim().isEmpty || password.text.isEmpty) {
-      setState(() => error = 'Completá tu correo y contraseña.');
+      setState(() => error = null);
+      (email.text.trim().isEmpty ? emailFocus : passwordFocus).requestFocus();
       return;
     }
+    FocusScope.of(context).unfocus();
     setState(() {
       busy = true;
+      showPassword = false;
       error = null;
     });
     try {
@@ -164,11 +188,17 @@ class _LoginPageState extends State<LoginPage> {
       );
     } on LenkaFailure catch (e) {
       if (mounted) setState(() => error = e.message);
+    } catch (_) {
+      if (mounted)
+        setState(() => error = 'No pudimos ingresar. Volvé a intentar.');
     } finally {
       widget.onSessionEnded?.call();
       if (mounted) {
         password.clear();
-        setState(() => busy = false);
+        setState(() {
+          busy = false;
+          attempted = false;
+        });
       }
     }
   }
@@ -199,31 +229,58 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 32),
                 TextField(
                   controller: email,
+                  focusNode: emailFocus,
+                  onChanged: (_) => setState(() => error = null),
                   enabled: !busy,
                   keyboardType: TextInputType.emailAddress,
                   autocorrect: false,
                   textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Correo electrónico',
+                    errorText: attempted && email.text.trim().isEmpty
+                        ? 'Escribí tu correo.'
+                        : null,
                   ),
                 ),
                 const SizedBox(height: 16),
                 TextField(
                   controller: password,
+                  focusNode: passwordFocus,
+                  onChanged: (_) => setState(() => error = null),
                   enabled: !busy,
-                  obscureText: true,
+                  obscureText: !showPassword,
                   autocorrect: false,
                   enableSuggestions: false,
-                  decoration: const InputDecoration(labelText: 'Contraseña'),
+                  textInputAction: TextInputAction.done,
+                  decoration: InputDecoration(
+                    labelText: 'Contraseña',
+                    errorText: attempted && password.text.isEmpty
+                        ? 'Escribí tu contraseña.'
+                        : null,
+                    suffixIcon: IconButton(
+                      tooltip: showPassword
+                          ? 'Ocultar contraseña'
+                          : 'Mostrar contraseña',
+                      onPressed: busy
+                          ? null
+                          : () => setState(() => showPassword = !showPassword),
+                      icon: Icon(
+                        showPassword ? Icons.visibility_off : Icons.visibility,
+                      ),
+                    ),
+                  ),
                   onSubmitted: (_) => submit(),
                 ),
                 if (error != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 16),
-                    child: Text(
-                      error!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
+                    child: Semantics(
+                      liveRegion: true,
+                      child: Text(
+                        error!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
                       ),
                     ),
                   ),

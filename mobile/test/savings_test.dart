@@ -76,6 +76,36 @@ class DelayedRepository extends FakeRepository {
 }
 
 void main() {
+  testWidgets(
+    'Login guides missing fields and masks password after backgrounding',
+    (tester) async {
+      await tester.pumpWidget(LenkaApp(repository: FakeRepository()));
+      await tester.tap(find.text('Ingresar'));
+      await tester.pumpAndSettle();
+      expect(find.text('Escribí tu correo.'), findsOneWidget);
+      expect(find.text('Escribí tu contraseña.'), findsOneWidget);
+      await tester.enterText(
+        find.byType(TextField).first,
+        'client@example.invalid',
+      );
+      await tester.enterText(find.byType(TextField).last, 'fictional');
+      await tester.tap(find.byTooltip('Mostrar contraseña'));
+      await tester.pump();
+      expect(
+        tester.widget<TextField>(find.byType(TextField).last).obscureText,
+        isFalse,
+      );
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      expect(
+        tester.widget<TextField>(find.byType(TextField).last).obscureText,
+        isTrue,
+      );
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
   testWidgets('Deposit search combines name and currency', (tester) async {
     await tester.pumpWidget(
       MaterialApp(home: SavingsPage(repository: FakeRepository())),
