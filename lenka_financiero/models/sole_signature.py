@@ -53,7 +53,14 @@ class LenkaSoleSignature(models.Model):
                 raise ValidationError(_('Cree la solicitud a sola firma en borrador o revision y utilice Aprobar.'))
             if vals.get('sole_signature_notification_id'):
                 raise AccessError(_('El aviso de aprobacion se registra automaticamente.'))
-        return super().create(vals_list)
+        records = super().create(vals_list)
+        # Tambien validar valores predeterminados de contexto e importaciones.
+        if records.filtered(lambda r: r.security_mode == 'sole_signature' and r.state not in ('draft', 'review')):
+            raise ValidationError(_('Cree la solicitud a sola firma en borrador o revision y utilice Aprobar.'))
+        if records.filtered('sole_signature_notification_id'):
+            raise AccessError(_('El aviso de aprobacion se registra automaticamente.'))
+        records._check_sole_signature_backing()
+        return records
 
     @api.constrains('security_mode', 'guarantor_ids', 'guarantee_ids')
     def _check_sole_signature_backing(self):

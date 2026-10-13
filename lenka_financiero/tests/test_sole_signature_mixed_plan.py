@@ -116,3 +116,8 @@ class TestSoleSignatureMixedPlan(TransactionCase):
     def test_import_cannot_create_approved_sole_signature(self):
         with self.assertRaises(ValidationError), self.cr.savepoint():
             self._operation(state='approved', is_quote=False)
+        with self.assertRaises(ValidationError), self.cr.savepoint():
+            self.env['lenka.financial.operation'].with_context(default_security_mode='sole_signature').create({
+                'partner_id': self.client.id, 'principal_amount': 1000,
+                'interest_rate': 3, 'term_months': 12, 'state': 'approved', 'is_quote': False,
+            })
