@@ -156,3 +156,20 @@ class TestExclusiveSoleSignatureApproval(TransactionCase):
     def test_distinct_active_company_users_required(self):
         with self.assertRaises(ValidationError), self.cr.savepoint():
             self.company.lenka_sole_signature_approver_id = self.elisa
+
+    def test_legacy_unbacked_approval_is_returned_to_exclusive_authorization(self):
+        op = self.env['lenka.financial.operation'].with_user(self.elisa).create({
+            'partner_id': self.client.id, 'security_mode': 'backed', 'is_quote': False,
+            'state': 'approved', 'principal_amount': 10000, 'interest_rate': 3,
+            'term_months': 12, 'approval_notes': 'Reenviar prestamo sin respaldo a Luis',
+        })
+        with self.assertRaises(ValidationError), self.cr.savepoint():
+            op.action_mark_contracted()
+        op.action_request_legacy_sole_signature()
+        self.assertEqual(op.state, 'review')
+        self.assertEqual(op.security_mode, 'sole_signature')
+        self.assertEqual(op.sole_signature_status, 'pending')
+        self.assertFalse(op.approved_by)
+        self.assertEqual(op.sole_signature_activity_id.sudo().user_id, self.luis)
+        op.with_user(self.luis).action_approve()
+        self.assertEqual(op.approved_by, self.luis)

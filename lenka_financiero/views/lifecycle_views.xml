@@ -8,6 +8,8 @@
             <xpath expr="//header" position="inside">
                 <field name="can_request_sole_signature" invisible="1"/>
                 <field name="can_decide_sole_signature" invisible="1"/>
+                <field name="can_request_legacy_sole_signature" invisible="1"/>
+                <button name="action_request_legacy_sole_signature" string="Reenviar sin respaldo a Luis Moran" type="object" invisible="not can_request_legacy_sole_signature"/>
                 <button name="action_approve" string="Aprobar" type="object" class="btn-primary" invisible="is_quote or state != 'review' or security_mode == 'sole_signature'" groups="lenka_financiero.group_lenka_manager"/>
                 <button name="action_request_sole_signature" string="Enviar a Luis Moran" type="object" class="btn-primary" invisible="is_quote or not can_request_sole_signature"/>
                 <button name="action_approve" string="Autorizar sin aval ni garantia" type="object" class="btn-primary" invisible="not can_decide_sole_signature"/>

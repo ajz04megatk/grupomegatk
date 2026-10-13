@@ -86,13 +86,20 @@ class LenkaSoleSignature(models.Model):
     sole_signature_notification_state = fields.Selection(related='sole_signature_notification_id.state', string='Estado del correo', readonly=True)
     can_request_sole_signature = fields.Boolean(compute='_compute_sole_signature_actions')
     can_decide_sole_signature = fields.Boolean(compute='_compute_sole_signature_actions')
+    can_request_legacy_sole_signature = fields.Boolean(compute='_compute_sole_signature_actions')
 
     @api.depends_context('uid')
-    @api.depends('security_mode', 'state', 'sole_signature_status', 'sole_signature_authorizer_id',
+    @api.depends('security_mode', 'state', 'sole_signature_status', 'sole_signature_authorizer_id', 'guarantor_ids', 'guarantee_ids', 'contract_signed', 'disbursed_amount',
                  'company_id.lenka_sole_signature_approver_id', 'company_id.lenka_sole_signature_requester_id')
     def _compute_sole_signature_actions(self):
         for rec in self:
             company = rec.company_id.sudo()
+            rec.can_request_legacy_sole_signature = (
+                rec.security_mode == 'backed' and rec.state == 'approved'
+                and not rec.guarantor_ids and not rec.guarantee_ids
+                and not rec.contract_signed and not rec.disbursed_amount
+                and company.lenka_sole_signature_requester_id.id == self.env.uid
+            )
             rec.can_request_sole_signature = (
                 rec.security_mode == 'sole_signature' and rec.sole_signature_status in ('none', 'rejected')
                 and rec.state in ('draft', 'review', 'rejected')
@@ -211,6 +218,25 @@ class LenkaSoleSignature(models.Model):
             body += Markup('<li><strong>%s:</strong> %s</li>') % (escape(label), escape(value))
         url = '%s/web#id=%s&model=%s&view_type=form' % (self.get_base_url(), self.id, self._name)
         return body + Markup('</ul><p><a href="%s">Revisar y decidir en Odoo</a></p>') % escape(url)
+
+    def action_request_legacy_sole_signature(self):
+        self.check_access('write')
+        for rec in self:
+            approver, requester = rec._sole_signature_users()
+            if self.env.uid != requester.id:
+                raise AccessError(_('Solo Elisa Rodriguez puede reenviar esta operacion a autorizacion.'))
+            if rec.security_mode != 'backed' or rec.state != 'approved' or rec.guarantor_ids or rec.guarantee_ids:
+                raise ValidationError(_('Esta accion solo aplica a operaciones aprobadas que quedaron sin aval ni garantia.'))
+            if rec.contract_signed or rec.contract_date or rec.disbursement_ids.filtered(lambda d: d.state == 'posted') or rec.generated_document_ids.filtered(lambda d: d.state == 'signed'):
+                raise ValidationError(_('No puede reenviar una operacion contratada, firmada o desembolsada.'))
+            previous = _('Aprobacion anterior reenviada para autorizacion exclusiva. Responsable anterior: %s; fecha anterior: %s.') % (rec.approved_by.display_name or '-', rec.approval_date or '-')
+            super(LenkaSoleSignature, rec).write({
+                'state': 'review', 'security_mode': 'sole_signature',
+                'approved_by': False, 'approval_date': False,
+            })
+            rec.message_post(body=previous, email_from=rec.company_id.email or self.env.user.email_formatted)
+            rec.action_request_sole_signature()
+        return True
 
     def _validate_for_approval(self):
         self.ensure_one()
