@@ -16,7 +16,8 @@
                         <group>
                             <field name="approved_by" readonly="1"/>
                             <field name="approval_date" readonly="1"/>
-                            <field name="approval_notes"/>
+                            <field name="approval_notes" readonly="state not in ('draft', 'review')" required="security_mode == 'sole_signature'"/>
+                            <field name="sole_signature_notification_state" readonly="1" invisible="security_mode != 'sole_signature'" groups="lenka_financiero.group_lenka_manager"/>
                         </group>
                         <group>
                             <field name="contract_reference"/>
@@ -122,3 +123,4 @@
         <field name="view_mode">list,form</field>
     </record>
 </odoo>
+

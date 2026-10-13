@@ -1,6 +1,12 @@
 name: Lenka Odoo 18 Integration
 
 on:
+  pull_request:
+    branches:
+      - lenka-pilot
+    paths:
+      - 'lenka_financiero/**'
+      - '.github/workflows/lenka-odoo18-ci.yml'
   push:
     branches:
       - lenka-pilot
@@ -187,3 +193,4 @@ jobs:
           env.cr.commit()
           print('LENKA_DEMO_ORM_OK')
           PY
+

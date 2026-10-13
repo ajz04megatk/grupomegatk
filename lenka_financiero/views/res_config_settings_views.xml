@@ -7,6 +7,11 @@
         <field name="arch" type="xml">
             <xpath expr="//form" position="inside">
                 <app string="Financiero Lenka" name="lenka_financiero" groups="lenka_financiero.group_lenka_manager">
+                    <block title="Aprobacion a sola firma">
+                        <setting string="Luis Moran - destinatario de avisos" help="Seleccione el contacto verificado de Luis Moran con correo. Cada aprobacion a sola firma enviara un aviso automaticamente para esta empresa.">
+                            <field name="lenka_sole_signature_notify_partner_id" options="{'no_create': True}"/>
+                        </setting>
+                    </block>
                     <block title="Cobros y tarjetas">
                         <setting string="Comision de tarjeta (%)" help="Porcentaje retenido por el banco o POS. El neto resultante es el monto que se aplica a la deuda del cliente.">
                             <field name="lenka_card_fee_rate"/>
@@ -58,3 +63,4 @@
         </field>
     </record>
 </odoo>
+

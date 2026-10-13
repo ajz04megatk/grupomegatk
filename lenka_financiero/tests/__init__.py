@@ -10,3 +10,5 @@ from . import test_end_to_end
 
 from . import test_statement
 from . import test_restructuring
+
+from . import test_sole_signature_mixed_plan
