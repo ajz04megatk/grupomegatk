@@ -21,3 +21,22 @@ las correcciones se hacen mediante una rectificación versionada.
 
 El dibujo es un esquema clínico, no una radiografía ni un diagnóstico automático.
 Las imágenes clínicas y DICOM se gestionan en el repositorio de imágenes del expediente.
+
+## Próximo cambio: selector de piezas con número y descripción
+
+La ventana «Buscar: Pieza» muestra actualmente solo el nombre del diente en una
+columna «Name». En el próximo cambio, tanto el selector corto como «Buscar más»
+mostrarán el número y la descripción juntos según el sistema elegido en el
+odontograma: por ejemplo, «18 · Tercer molar superior derecho» en FDI y
+«1 · Tercer molar superior derecho» en ADA. La lista llevará la columna «Pieza».
+
+La búsqueda debe aceptar número FDI, número ADA y nombre, también para dientes
+temporales. El contexto FDI/ADA debe llegar al selector en línea y al formulario
+de hallazgos. Se conservará el identificador de la pieza y sus datos clínicos;
+el gráfico compacto puede seguir mostrando solo el número.
+
+Criterios de comprobación en staging: la misma pieza aparece con ambos códigos
+y descripción al cambiar la notación; «Buscar más» muestra la numeración; buscar
+por código o nombre encuentra la pieza; seleccionar un diente temporal funciona;
+los hallazgos existentes mantienen su referencia. Archivos previstos:
+`models/tooth.py`, `views/odontogram_views.xml` y pruebas dirigidas.
