@@ -12,6 +12,7 @@ on:
       - lenka-pilot
       - lenka-exclusive-approval-20261013
       - lenka-mixed-plan-20261013
+      - lenka-field-validation-20261013
     paths:
       - 'lenka_financiero/**'
       - '.github/workflows/lenka-odoo18-ci.yml'
