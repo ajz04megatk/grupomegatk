@@ -1,10 +1,30 @@
 from odoo import http
 from odoo.http import request
+from odoo.exceptions import AccessError
 
 
 class LenkaMobileController(http.Controller):
 
+    @http.route('/lenka/app', type='http', auth='user', methods=['GET'])
+    def app(self, **kwargs):
+        try:
+            self._service()._current_partner()
+        except AccessError:
+            response = request.render('lenka_financiero.mobile_app_denied', status=403)
+        else:
+            response = request.render('lenka_financiero.mobile_app')
+        response.headers['Cache-Control'] = 'no-store, private'
+        response.headers['Referrer-Policy'] = 'same-origin'
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['Content-Security-Policy'] = (
+            "default-src 'self'; script-src 'self'; style-src 'self'; "
+            "img-src 'self'; connect-src 'self'; object-src 'none'; "
+            "base-uri 'none'; frame-ancestors 'self'"
+        )
+        return response
+
     def _service(self):
+        request.future_response.headers['Cache-Control'] = 'no-store, private'
         return request.env['lenka.mobile.service']
 
     @http.route('/lenka/mobile/v1/dashboard', type='json', auth='bearer', methods=['POST'], csrf=False)

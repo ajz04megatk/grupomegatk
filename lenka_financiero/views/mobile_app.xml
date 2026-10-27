@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <template id="mobile_app" name="Financiero Lenka móvil">
+        <html lang="es-HN">
+            <head>
+                <meta charset="utf-8"/>
+                <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+                <meta name="theme-color" content="#145d65"/>
+                <meta name="robots" content="noindex,nofollow"/>
+                <meta name="apple-mobile-web-app-capable" content="yes"/>
+                <meta name="apple-mobile-web-app-title" content="Lenka"/>
+                <title>Financiero Lenka</title>
+                <link rel="manifest" href="/lenka_financiero/static/src/mobile/manifest.webmanifest"/>
+                <link rel="icon" href="/lenka_financiero/static/description/icon.png"/>
+                <link rel="apple-touch-icon" href="/lenka_financiero/static/description/icon.png"/>
+                <link rel="stylesheet" href="/lenka_financiero/static/src/mobile/app.css"/>
+                <script type="module" src="/lenka_financiero/static/src/mobile/app.mjs"></script>
+            </head>
+            <body>
+                <a href="#contenido" class="skip-link">Ir al contenido</a>
+                <div id="lenka-app"><p role="status">Abriendo Financiero Lenka…</p></div>
+                <noscript>Activá JavaScript para consultar tu información de Lenka.</noscript>
+            </body>
+        </html>
+    </template>
+    <template id="mobile_app_denied" name="Acceso móvil Lenka pendiente">
+        <html lang="es-HN">
+            <head>
+                <meta charset="utf-8"/>
+                <meta name="viewport" content="width=device-width, initial-scale=1"/>
+                <meta name="robots" content="noindex,nofollow"/>
+                <title>Acceso a Financiero Lenka</title>
+                <link rel="stylesheet" href="/lenka_financiero/static/src/mobile/app.css"/>
+            </head>
+            <body><main>
+                <h1>Tu acceso móvil necesita habilitación</h1>
+                <p>Consultá con Inversiones Lenka para habilitar tu usuario y verificar el contacto asociado a tu cuenta.</p>
+                <p>Si ya tenés acceso con otra cuenta, cerrá esta sesión e ingresá con el usuario habilitado.</p>
+                <a class="button" href="/web/session/logout?redirect=/lenka/app">Cambiar de usuario</a>
+            </main></body>
+        </html>
+    </template>
+</odoo>

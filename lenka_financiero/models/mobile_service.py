@@ -25,18 +25,28 @@ class LenkaMobileService(models.AbstractModel):
         return [(field_name, 'child_of', partner.id)]
 
     @api.model
+    def _mobile_domain(self):
+        # sudo is used only after checking the client identity. Scope every query
+        # by both the client and the companies explicitly assigned to their user.
+        partner = self._current_partner()
+        companies = self.env.user.company_ids
+        if partner.company_id:
+            companies = companies.filtered(lambda c: c == partner.company_id)
+        return [('partner_id', 'child_of', partner.id), ('company_id', 'in', companies.ids)]
+
+    @api.model
     def get_my_dashboard(self):
         partner = self._current_partner()
-        operations = self.env['lenka.financial.operation'].sudo().search([
+        operations = self.env['lenka.financial.operation'].sudo().search(self._mobile_domain() + [
             ('partner_id', 'child_of', partner.id),
             ('is_quote', '=', False),
             ('state', 'in', ('approved', 'contracted', 'active', 'done')),
         ])
-        investments = self.env['lenka.investment'].sudo().search([
+        investments = self.env['lenka.investment'].sudo().search(self._mobile_domain() + [
             ('partner_id', 'child_of', partner.id),
             ('state', 'in', ('active', 'matured', 'closed')),
         ])
-        statements = self.env['lenka.statement'].sudo().search([
+        statements = self.env['lenka.statement'].sudo().search(self._mobile_domain() + [
             ('partner_id', 'child_of', partner.id),
             ('state', 'in', ('generated', 'sent')),
         ], order='date_to desc', limit=5)
@@ -74,7 +84,7 @@ class LenkaMobileService(models.AbstractModel):
     @api.model
     def get_my_operations(self):
         partner = self._current_partner()
-        operations = self.env['lenka.financial.operation'].sudo().search([
+        operations = self.env['lenka.financial.operation'].sudo().search(self._mobile_domain() + [
             ('partner_id', 'child_of', partner.id),
             ('is_quote', '=', False),
             ('state', 'not in', ('draft', 'review', 'rejected', 'cancelled')),
@@ -109,8 +119,9 @@ class LenkaMobileService(models.AbstractModel):
     @api.model
     def get_my_operation_detail(self, operation_id):
         partner = self._current_partner()
-        operation = self.env['lenka.financial.operation'].sudo().search([
+        operation = self.env['lenka.financial.operation'].sudo().search(self._mobile_domain() + [
             ('id', '=', int(operation_id)),
+            ('state', 'in', ('approved', 'contracted', 'active', 'done')),
             ('partner_id', 'child_of', partner.id),
             ('is_quote', '=', False),
         ], limit=1)
@@ -158,7 +169,7 @@ class LenkaMobileService(models.AbstractModel):
     @api.model
     def get_my_investments(self):
         partner = self._current_partner()
-        investments = self.env['lenka.investment'].sudo().search([
+        investments = self.env['lenka.investment'].sudo().search(self._mobile_domain() + [
             ('partner_id', 'child_of', partner.id),
             ('state', 'not in', ('draft', 'cancelled')),
         ], order='start_date desc, id desc')
@@ -183,8 +194,9 @@ class LenkaMobileService(models.AbstractModel):
     @api.model
     def get_my_investment_detail(self, investment_id):
         partner = self._current_partner()
-        investment = self.env['lenka.investment'].sudo().search([
+        investment = self.env['lenka.investment'].sudo().search(self._mobile_domain() + [
             ('id', '=', int(investment_id)),
+            ('state', 'in', ('active', 'matured', 'closed')),
             ('partner_id', 'child_of', partner.id),
         ], limit=1)
         if not investment:
@@ -224,7 +236,7 @@ class LenkaMobileService(models.AbstractModel):
     @api.model
     def get_my_statements(self):
         partner = self._current_partner()
-        statements = self.env['lenka.statement'].sudo().search([
+        statements = self.env['lenka.statement'].sudo().search(self._mobile_domain() + [
             ('partner_id', 'child_of', partner.id),
             ('state', 'in', ('generated', 'sent')),
         ], order='date_to desc, id desc')
