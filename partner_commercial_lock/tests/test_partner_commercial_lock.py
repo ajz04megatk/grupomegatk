@@ -27,6 +27,12 @@ class TestPartnerCommercialLock(TransactionCase):
             login="commercial_lock_manager",
             groups="base.group_user,base.group_partner_manager",
         )
+        cls.technician = new_test_user(
+            cls.env,
+            login="commercial_lock_technician",
+            groups="base.group_user,base.group_partner_manager,"
+                   "partner_commercial_lock.group_no_reassign_partner_commercial",
+        )
         cls.customer = cls.env["res.partner"].create({
             "name": "Commercial lock test customer",
             "user_id": cls.seller.id,
@@ -108,6 +114,23 @@ class TestPartnerCommercialLock(TransactionCase):
             "user_id": self.other_seller.id,
         })
         self.assertEqual(self.customer.user_id, self.other_seller)
+
+    def test_technician_cannot_reassign_but_can_edit_other_fields(self):
+        with self.assertRaises(AccessError):
+            self.customer.with_user(self.technician).write({
+                "user_id": self.other_seller.id,
+            })
+        self.customer.with_user(self.technician).write({"ref": "Technical edit"})
+        self.assertEqual(self.customer.user_id, self.seller)
+        self.assertEqual(self.customer.ref, "Technical edit")
+
+    def test_settings_group_does_not_bypass_explicit_restriction(self):
+        self.technician.write({
+            "groups_id": [(4, self.env.ref("base.group_system").id)],
+        })
+        with self.assertRaises(AccessError):
+            self.customer.with_user(self.technician).write({"user_id": False})
+        self.assertEqual(self.customer.user_id, self.seller)
 
     def test_restriction_is_per_user_in_the_same_environment(self):
         self.assertTrue(

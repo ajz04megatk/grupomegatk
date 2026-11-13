@@ -3,7 +3,7 @@
 Propuesta para Odoo 18. No está instalada ni activada en producción.
 
 El campo es `res.partner.user_id` (Contactos → Venta y compra → Comercial).
-Los miembros de **No reasignar comercial de contactos** pueden leer ese campo
+Los vendedores y técnicos miembros de **No reasignar comercial de contactos** pueden leer ese campo
 y conservar sus demás permisos, pero no cambiarlo, quitarlo ni apropiarse de
 un contacto existente que no tenga comercial. La comprobación se ejecuta en
 `write` antes de guardar, incluidas importaciones, API y cambios en lote.
@@ -27,30 +27,35 @@ comprobación del servidor sigue siendo obligatoria si otra vista altera la UI.
 2. Usar un respaldo y una copia de pruebas de la base actual. Instalar solo
    `partner_commercial_lock`; no es necesario actualizar `grupos_accesos` ni
    reinstalar componentes existentes.
-3. Asignar **No reasignar comercial de contactos** a los vendedores definidos
+3. Asignar **No reasignar comercial de contactos** a los vendedores y técnicos definidos
    por Administración en las empresas donde se aplique la política.
    Mantener fuera del grupo a Gerencia de Ventas, la cuenta de Facturación y
    las cuentas autorizadas de Administración: conservarán sus permisos actuales
    para reasignar, sin recibir ACL ni privilegios nuevos por este módulo.
-   Incluir esta asignación en el alta de futuros vendedores.
+   Incluir esta asignación en el alta de futuros vendedores y técnicos.
 4. Ejecutar las pruebas en una base de pruebas, nunca con registros comerciales
    reales: `odoo-bin -d <base_pruebas> -i partner_commercial_lock --test-enable
    --test-tags /partner_commercial_lock --stop-after-init --without-demo=all`.
    Si el módulo ya está instalado en pruebas, usar `-u` en vez de `-i`.
 5. Verificar la vista final con Studio y los demás módulos activos. Comprobar
-   con un vendedor la lectura del comercial, el rechazo de cambio y borrado,
-   la edición de otro dato, y con cada cuenta autorizada de Gerencia de Ventas,
-   Facturación y Administración la reasignación permitida.
+   con un vendedor y un técnico la lectura del comercial, el rechazo de cambio
+   y borrado, la edición de otro dato, y con cada cuenta autorizada de Gerencia
+   de Ventas, Facturación y Administración la reasignación permitida.
    Revisar también importación/API, lote y contactos compartidos entre empresas.
 6. Publicar e instalar en producción únicamente tras esas comprobaciones.
 
 ## Validación disponible
 
-Se incluyen 13 pruebas de integración de Odoo para lectura, bloqueo, borrado,
+Se incluyen 15 pruebas de integración de Odoo para lectura, bloqueo, borrado,
 contactos sin comercial, edición de otros campos, mismo valor, lote sin cambios
-parciales, contextos, sudo, aislamiento por usuario y cambio de membresía.
-No se han ejecutado: el entorno de revisión no dispone de Odoo ni PostgreSQL.
-La validación local de sintaxis Python/XML no sustituye esas pruebas.
+parciales, contextos, sudo, aislamiento por usuario, cambio de membresía y
+técnicos con o sin permisos de Ajustes. No existe una excepción implícita por
+pertenecer a un grupo administrativo general.
+
+El workflow `Pruebas del bloqueo de comercial` ejecuta la instalación y la suite
+con datos ficticios en contenedores Odoo 18 y PostgreSQL, sin credenciales de
+producción. Revisar su resultado antes de integrar. Esa prueba aislada no
+sustituye la validación de compatibilidad con la copia de la base actual.
 
 ## Reversión
 
