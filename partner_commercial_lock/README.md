@@ -52,10 +52,14 @@ parciales, contextos, sudo, aislamiento por usuario, cambio de membresía y
 técnicos con o sin permisos de Ajustes. No existe una excepción implícita por
 pertenecer a un grupo administrativo general.
 
-El workflow `Pruebas del bloqueo de comercial` ejecuta la instalación y la suite
-con datos ficticios en contenedores Odoo 18 y PostgreSQL, sin credenciales de
-producción. Revisar su resultado antes de integrar. Esa prueba aislada no
-sustituye la validación de compatibilidad con la copia de la base actual.
+Validación del commit `13cc0f8698194be358155af5259002bcd78e3b6d`: instalación
+correcta y 15 pruebas aprobadas, 0 fallos y 0 errores, en Odoo 18/PostgreSQL
+con datos ficticios y sin credenciales de producción. Evidencia:
+https://github.com/ajz04megatk/grupomegatk/actions/runs/43431861214
+
+El workflow `Pruebas del bloqueo de comercial` permite repetir esa validación.
+La prueba aislada no sustituye la comprobación de compatibilidad con la copia
+de la base actual ni acredita que el módulo esté instalado en producción.
 
 ## Reversión
 
