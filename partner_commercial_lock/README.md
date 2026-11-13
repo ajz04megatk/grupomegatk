@@ -29,7 +29,9 @@ comprobación del servidor sigue siendo obligatoria si otra vista altera la UI.
    reinstalar componentes existentes.
 3. Asignar **No reasignar comercial de contactos** a los vendedores definidos
    por Administración en las empresas donde se aplique la política.
-   Mantener fuera del grupo a quienes deban reasignar.
+   Mantener fuera del grupo a Gerencia de Ventas, la cuenta de Facturación y
+   las cuentas autorizadas de Administración: conservarán sus permisos actuales
+   para reasignar, sin recibir ACL ni privilegios nuevos por este módulo.
    Incluir esta asignación en el alta de futuros vendedores.
 4. Ejecutar las pruebas en una base de pruebas, nunca con registros comerciales
    reales: `odoo-bin -d <base_pruebas> -i partner_commercial_lock --test-enable
@@ -37,7 +39,8 @@ comprobación del servidor sigue siendo obligatoria si otra vista altera la UI.
    Si el módulo ya está instalado en pruebas, usar `-u` en vez de `-i`.
 5. Verificar la vista final con Studio y los demás módulos activos. Comprobar
    con un vendedor la lectura del comercial, el rechazo de cambio y borrado,
-   la edición de otro dato, y con Administración la reasignación autorizada.
+   la edición de otro dato, y con cada cuenta autorizada de Gerencia de Ventas,
+   Facturación y Administración la reasignación permitida.
    Revisar también importación/API, lote y contactos compartidos entre empresas.
 6. Publicar e instalar en producción únicamente tras esas comprobaciones.
 
