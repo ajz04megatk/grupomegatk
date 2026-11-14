@@ -1,0 +1,41 @@
+name: Quotation commercial assignment lock (Odoo 18)
+on:
+  push:
+    branches: ['fix/representante-cotizaciones-20261114']
+    paths: ['partner_commercial_lock/**', '.github/scripts/quotation_lock_fixture.py', '.github/workflows/quotation-commercial-lock.yml']
+  pull_request:
+    paths: ['partner_commercial_lock/**', '.github/scripts/quotation_lock_fixture.py', '.github/workflows/quotation-commercial-lock.yml']
+permissions:
+  contents: read
+jobs:
+  odoo18:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare synthetic compatibility fixtures
+        run: python3 .github/scripts/quotation_lock_fixture.py /tmp/quotation-lock-fixtures
+      - name: Run Odoo 18 tests with synthetic quotations only
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker network create quotation-lock-ci
+          docker run -d --name quote-db --network quotation-lock-ci -e POSTGRES_USER=odoo -e POSTGRES_PASSWORD=synthetic_ci_only -e POSTGRES_DB=postgres postgres:16
+          for attempt in $(seq 1 30); do
+            if docker exec quote-db pg_isready -U odoo; then break; fi
+            sleep 1
+          done
+          docker run --rm --network quotation-lock-ci --entrypoint odoo \
+            -v "$PWD/partner_commercial_lock:/mnt/extra-addons/partner_commercial_lock:ro" \
+            -v /tmp/quotation-lock-fixtures/fields_megatk:/mnt/extra-addons/fields_megatk:ro \
+            -v /tmp/quotation-lock-fixtures/grupos_accesos:/mnt/extra-addons/grupos_accesos:ro \
+            odoo:18.0 --db_host=quote-db --db_user=odoo --db_password=synthetic_ci_only \
+            --database=quotation_lock_synthetic --init=l10n_us,partner_commercial_lock --without-demo=all \
+            --test-enable --test-tags=/partner_commercial_lock --stop-after-init --workers=0 --max-cron-threads=0 \
+            --log-level=test 2>&1 | tee quotation-lock-tests.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: quotation-lock-test-evidence
+          path: quotation-lock-tests.log
+          retention-days: 14
