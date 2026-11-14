@@ -1,8 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <odoo>
     <record id="group_no_reassign_partner_commercial" model="res.groups">
-        <field name="name">No reasignar comercial de contactos</field>
+        <field name="name">No reasignar representante comercial</field>
         <field name="category_id" ref="base.module_category_usability"/>
-        <field name="comment">Restricción específica: permite consultar el comercial y conserva los demás permisos del usuario, pero impide cambiar o quitar el comercial de contactos existentes. Este grupo no concede permisos adicionales.</field>
+        <field name="comment">Bloqueo explícito de reasignaciones en contactos, cotizaciones y líneas. Tiene prioridad sobre permisos generales y sobre la autorización de asignaciones.</field>
+    </record>
+    <record id="group_manage_commercial_assignment" model="res.groups">
+        <field name="name">Administrar asignaciones comerciales</field>
+        <field name="category_id" ref="base.module_category_usability"/>
+        <field name="implied_ids" eval="[(4, ref('grupos_accesos.edit_comercial_cotizacion'))]"/>
+        <field name="comment">Permite reasignar representantes dentro de los permisos normales de Odoo. Reservado a Gerencia de Ventas, Facturación, Administración y excepciones autorizadas expresamente. No concede acceso a empresas ni a otros documentos.</field>
     </record>
 </odoo>

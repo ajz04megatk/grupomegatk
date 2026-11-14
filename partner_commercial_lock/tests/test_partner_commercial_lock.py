@@ -25,7 +25,8 @@ class TestPartnerCommercialLock(TransactionCase):
         cls.manager = new_test_user(
             cls.env,
             login="commercial_lock_manager",
-            groups="base.group_user,base.group_partner_manager",
+            groups="base.group_user,base.group_partner_manager,"
+                   "partner_commercial_lock.group_manage_commercial_assignment",
         )
         cls.technician = new_test_user(
             cls.env,
@@ -144,6 +145,7 @@ class TestPartnerCommercialLock(TransactionCase):
         )
 
     def test_assigning_and_removing_group_updates_the_guard(self):
+        self.other_seller.write({"groups_id": [(4, self.env.ref("partner_commercial_lock.group_manage_commercial_assignment").id)]})
         self.other_seller.write({"groups_id": [(4, self.lock_group.id)]})
         with self.assertRaises(AccessError):
             self.customer.with_user(self.other_seller).write({"user_id": False})

@@ -1,0 +1,25 @@
+<odoo>
+  <record id="sale_order_commercial_assignment_lock" model="ir.ui.view">
+    <field name="name">sale.order.commercial.assignment.lock</field>
+    <field name="model">sale.order</field>
+    <field name="inherit_id" ref="sale.view_order_form"/>
+    <field name="priority">1000</field>
+    <field name="arch" type="xml">
+      <xpath expr="//form/sheet" position="inside">
+        <field name="commercial_assignment_locked" invisible="1"/>
+      </xpath>
+      <xpath expr="//field[@name='user_id']" position="attributes">
+        <attribute name="readonly" add="commercial_assignment_locked" separator=" or "/>
+      </xpath>
+      <xpath expr="//field[@name='order_line']/list" position="inside">
+        <field name="commercial_assignment_locked" column_invisible="1"/>
+      </xpath>
+      <xpath expr="//field[@name='order_line']/form" position="inside">
+        <field name="commercial_assignment_locked" invisible="1"/>
+      </xpath>
+      <xpath expr="//field[@name='order_line']/list/field[@name='x_user_id']" position="attributes">
+        <attribute name="readonly" add="commercial_assignment_locked" separator=" or "/>
+      </xpath>
+    </field>
+  </record>
+</odoo>
