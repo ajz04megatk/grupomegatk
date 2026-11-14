@@ -23,9 +23,9 @@ jobs:
             if docker exec sentinel-db pg_isready -U odoo; then break; fi
             sleep 1
           done
-          docker run --rm --name sentinel-test --network sentinel-audit-ci \
+          docker run --rm --name sentinel-test --network sentinel-audit-ci --entrypoint odoo \
             -v "$PWD/sentinel_invoice_audit:/mnt/extra-addons/sentinel_invoice_audit:ro" \
-            odoo:18.0 odoo --db_host=sentinel-db --db_user=odoo --db_password=synthetic_ci_only \
+            odoo:18.0 --db_host=sentinel-db --db_user=odoo --db_password=synthetic_ci_only \
             --database=sentinel_synthetic_ci --init=l10n_us,sentinel_invoice_audit --without-demo=all \
             --test-enable --test-tags=/sentinel_invoice_audit --stop-after-init \
             --workers=0 --max-cron-threads=0 --http-port=8069 --log-level=test \

@@ -1,5 +1,6 @@
 """Transactional financial audit. Never elevate a financial create/write/unlink."""
 from datetime import date, datetime, timezone
+from hashlib import sha256
 import re
 from uuid import uuid4
 
@@ -210,6 +211,14 @@ def _append(record, op, before, before_relation, correlation):
                            'deleted_relations': 'captured before unlink',
                            'no_human_manual_inference': True},
     }
+    if record._name == 'account.partial.reconcile' and relation['reconciliation']:
+        rec = relation['reconciliation']
+        debit, credit = rec['debit_line']['id'], rec['credit_line']['id']
+        identity = '%s:%s:%s:%s:%s' % (relation['company_id'], debit, credit,
+                                      rec['debit_currency_id'], rec['credit_currency_id'])
+        vals.update(relationship_key=sha256(identity.encode()).hexdigest(),
+                    debit_line_res_id=debit, credit_line_res_id=credit,
+                    applied_amount=rec['amount'], company_currency_res_id=rec['company_currency_id'])
     invoices = relation['invoice_refs'] or [{'id': 0, 'name': None}]
     # Sudo is used exclusively for append-only audit rows, never the financial operation.
     with internal_append():
