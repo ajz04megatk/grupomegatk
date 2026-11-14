@@ -91,7 +91,7 @@ class TestInvoiceAudit(AccountTestInvoicingCommon):
 
     def test_posting_actor_and_terms_are_contemporaneous(self):
         invoice = self._invoice()
-        invoice.with_user(self.actor).action_post()
+        invoice.with_user(self.actor).with_context(allowed_company_ids=[8, 9]).action_post()
         posted = self._events(invoice, event_type='posted', source_model='account.move')
         self.assertTrue(posted)
         self.assertEqual(posted[-1].actor_res_id, self.actor.id)
@@ -105,8 +105,8 @@ class TestInvoiceAudit(AccountTestInvoicingCommon):
     def test_reverted_changes_reset_cancel_and_deletion_survive(self):
         invoice = self._invoice()
         invoice.action_post()
-        invoice.with_user(self.actor).write({'ref': 'changed then reverted'})
-        invoice.with_user(self.actor).write({'ref': False})
+        invoice.with_user(self.actor).with_context(allowed_company_ids=[8, 9]).write({'ref': 'changed then reverted'})
+        invoice.with_user(self.actor).with_context(allowed_company_ids=[8, 9]).write({'ref': False})
         invoice.button_draft()
         invoice.button_cancel()
         events = self._events(invoice, source_model='account.move')
@@ -132,11 +132,12 @@ class TestInvoiceAudit(AccountTestInvoicingCommon):
         payment = self._payment(70)
         partial = self._partial(invoice, payment, 70)
         old_id, debit, credit = partial.id, partial.debit_move_id.id, partial.credit_move_id.id
-        partial.with_user(self.actor).unlink()
+        partial.with_user(self.actor).with_context(allowed_company_ids=[8, 9]).unlink()
         removed = self._events(invoice, event_type='payment_unapplication')[-1]
         self.assertEqual(removed.actor_res_id, self.actor.id)
         self.assertEqual(removed.reconciliation['partial_reconcile_id'], old_id)
         self.assertEqual(removed.reconciliation['amount'], 70)
+
         self.assertEqual(removed.reconciliation['debit_line']['id'], debit)
         self.assertEqual(removed.reconciliation['credit_line']['id'], credit)
         self.assertIn(payment.id, [p['id'] for p in removed.payment_refs])
@@ -146,6 +147,22 @@ class TestInvoiceAudit(AccountTestInvoicingCommon):
         self.assertNotEqual(applied.reconciliation['partial_reconcile_id'], old_id)
         self.assertEqual(applied.reconciliation['partial_reconcile_id'], reapplied.id)
         self.assertEqual(removed.reconciliation['amount'], 70)
+
+    def test_full_reconciliation_is_logged_without_double_counting(self):
+        invoice = self._invoice()
+        invoice.invoice_payment_term_id = self.pay_terms_a
+        invoice.action_post()
+        payment = self._payment(100)
+        partial = self._partial(invoice, payment, 100)
+        full = self.env['account.full.reconcile'].create({
+            'partial_reconcile_ids': [Command.set(partial.ids)],
+            'reconciled_line_ids': [Command.set((partial.debit_move_id | partial.credit_move_id).ids)],
+        })
+        self.assertTrue(self._events(invoice, source_model='account.full.reconcile', operation='create'))
+        full.unlink()
+        removed = self._events(invoice, source_model='account.full.reconcile', operation='unlink')[-1]
+        self.assertFalse(removed.reconciliation['amount_is_canonical'])
+        self.assertEqual(removed.reconciliation['partial_reconcile_ids'], partial.ids)
 
     def test_audit_reader_cannot_write_and_company_scope_is_enforced(self):
         invoice8, invoice9 = self._invoice(), self._invoice(self.company9)
@@ -161,15 +178,15 @@ class TestInvoiceAudit(AccountTestInvoicingCommon):
         with self.assertRaises(AccessError):
             model.with_context(sentinel_internal_append=True, sudo=True).create({})
         with self.assertRaises(AccessError):
-            invoice8.with_user(self.reader).action_post()
+            invoice8.with_user(self.reader).with_context(allowed_company_ids=[8]).action_post()
 
     def test_scheduled_origin_and_spoofed_rpc_context(self):
         invoice = self._invoice()
-        invoice.with_user(self.actor).with_context(sentinel_origin='scheduled_job', skip_audit=True).write({'ref': 'not a cron'})
+        invoice.with_user(self.actor).with_context(allowed_company_ids=[8, 9]).with_context(sentinel_origin='scheduled_job', skip_audit=True).write({'ref': 'not a cron'})
         event = self._events(invoice, source_model='account.move')[-1]
         self.assertNotEqual(event.execution_kind, 'scheduled_job')
         with origin('scheduled_job', self.actor.id, {'cron_id': 123}):
-            invoice.with_user(self.actor).write({'ref': 'actual server origin'})
+            invoice.with_user(self.actor).with_context(allowed_company_ids=[8, 9]).write({'ref': 'actual server origin'})
         event = self._events(invoice, source_model='account.move')[-1]
         self.assertEqual(event.execution_kind, 'scheduled_job')
         self.assertEqual(event.origin_evidence['cron_id'], 123)

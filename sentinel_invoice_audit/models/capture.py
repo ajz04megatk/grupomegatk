@@ -155,13 +155,15 @@ def _provenance(env):
     try:
         from odoo.http import request
         if request:
-            return 'http_request_unclassified', env.uid, {'path': request.httprequest.path}
+            initiating_uid = request.session.uid or env.uid
+            return 'http_request_unclassified', initiating_uid, {'path': request.httprequest.path,
+                                                                 'authenticated_session_uid': request.session.uid or None}
     except (RuntimeError, AttributeError):
         pass
     return 'unclassified', env.uid, {'source': 'No verified scheduler/automation/request origin'}
 
 
-def _append(record, op, before, before_relation, correlation):
+def _append(record, op, before, before_relation, correlation, requested_state=None):
     after_relation = _relations(record) if op != 'unlink' else None
     after = _snapshot(record) if op != 'unlink' else None
     relation = after_relation or before_relation
@@ -183,11 +185,11 @@ def _append(record, op, before, before_relation, correlation):
     event_type = op
     if record._name == 'account.move':
         old_state, new_state = old.get('state'), new.get('state')
-        if new_state == 'posted' and old_state != 'posted':
+        if requested_state == 'posted' and new_state == 'posted' and old_state != 'posted':
             event_type = 'posted'
-        elif old_state == 'posted' and new_state == 'draft':
+        elif requested_state == 'draft' and old_state == 'posted' and new_state == 'draft':
             event_type = 'reset_to_draft'
-        elif new_state == 'cancel' and old_state != 'cancel':
+        elif requested_state == 'cancel' and new_state == 'cancel' and old_state != 'cancel':
             event_type = 'cancelled'
     if record._name == 'account.partial.reconcile':
         event_type = {'create': 'payment_application', 'unlink': 'payment_unapplication'}.get(op, op)
@@ -232,10 +234,10 @@ def _create(records, vals_list, parent_create):
     with operation() as correlation:
         created = parent_create(vals_list)
         if records.env.registry.ready:
-            for record in created:
+            for record, values in zip(created, vals_list):
                 relation = _relations(record)
                 if _active(record, relation):
-                    _append(record, 'create', None, None, correlation)
+                    _append(record, 'create', None, None, correlation, requested_state=values.get('state'))
         return created
 
 
@@ -246,7 +248,7 @@ def _write(records, vals, parent_write):
         for record in records:
             snapshot, relation = before.get(record.id, (None, None))
             if snapshot is not None or _active(record, _relations(record)):
-                _append(record, 'write', snapshot, relation, correlation)
+                _append(record, 'write', snapshot, relation, correlation, requested_state=vals.get('state'))
         return result
 
 
