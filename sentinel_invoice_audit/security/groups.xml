@@ -1,0 +1,6 @@
+<odoo>
+  <record id="group_audit_reader" model="res.groups">
+    <field name="name">Sentinel: lectura de auditoría de facturas</field>
+    <field name="comment">Solo lectura del historial financiero de MEGATK y MEDITEK; no otorga operaciones contables.</field>
+  </record>
+</odoo>
