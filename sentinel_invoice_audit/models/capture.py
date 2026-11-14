@@ -4,7 +4,8 @@ from hashlib import sha256
 import re
 from uuid import uuid4
 
-from odoo import api, models
+from odoo import api, models, _
+from odoo.exceptions import AccessError
 
 from .context import ORIGIN, internal_append, operation
 from .event import SCOPE
@@ -15,6 +16,14 @@ IGNORED = {'write_date', 'write_uid', 'create_date', 'create_uid', '__last_updat
            'message_ids', 'activity_ids', 'website_message_ids', 'access_url'}
 TYPES = {'boolean', 'integer', 'float', 'monetary', 'char', 'text', 'date', 'datetime',
          'selection', 'many2one', 'many2many', 'one2many'}
+
+
+def _deny_auditor_write(records):
+    # Odoo ACL grants are additive. A read ACL alone cannot neutralize the
+    # auditor's pre-existing accounting groups. No client context/sudo bypass.
+    group = records.env.ref('sentinel_invoice_audit.group_audit_reader', raise_if_not_found=False)
+    if group and group.id in records.env.user.sudo().groups_id.ids:
+        raise AccessError(_('Auditor solo tiene lectura: no puede crear, modificar ni eliminar registros financieros.'))
 
 
 def _value(value, field):
@@ -231,6 +240,7 @@ def _append(record, op, before, before_relation, correlation, requested_state=No
 
 
 def _create(records, vals_list, parent_create):
+    _deny_auditor_write(records)
     with operation() as correlation:
         created = parent_create(vals_list)
         if records.env.registry.ready:
@@ -242,6 +252,7 @@ def _create(records, vals_list, parent_create):
 
 
 def _write(records, vals, parent_write):
+    _deny_auditor_write(records)
     with operation() as correlation:
         before = _before(records) if records.env.registry.ready else {}
         result = parent_write(vals)
@@ -253,6 +264,7 @@ def _write(records, vals, parent_write):
 
 
 def _unlink(records, parent_unlink):
+    _deny_auditor_write(records)
     with operation() as correlation:
         before = _before(records) if records.env.registry.ready else {}
         result = parent_unlink()

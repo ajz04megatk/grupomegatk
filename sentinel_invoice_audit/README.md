@@ -2,6 +2,8 @@
 
 Company scope is fixed to MEGATK (8) and MEDITEK (9), intersected with the reader's native Odoo company permissions. This addon adds an append-only event store and a pure-read invoice chatter projection. It grants no accounting write, posting, approval, cancellation, reconciliation, user-management or Settings permissions.
 
+The audit reader role also rejects financial `create/write/unlink` on the five captured models, even if other pre-existing groups grant writes. This is necessary because Odoo ACL grants are additive. No request context or internal `sudo` retaining that auditor identity bypasses the guard. Other users' permissions and the auditor's existing groups are not removed or rewritten; only the dedicated role's members receive this financial read-only restriction. Permissions on unrelated Odoo models are outside this addon.
+
 ## Evidence and limits
 
 `sentinel.invoice.audit.event` records the effective ORM user before the logger's internal storage elevation. UUIDs identify events; `source_event_uid` deduplicates the same operation projected against several invoices. `correlation_uid` links nested ORM operations. UTC microsecond ISO timestamps supplement Odoo's timestamp field. Company, invoice/payment/ledger identifiers and safe stored old/new values are snapshots, not foreign keys to objects that may later be removed. A posted event snapshots payment terms, their definition and due lines at that operation. It does not infer historic terms from the current invoice.

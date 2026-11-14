@@ -181,6 +181,24 @@ class TestInvoiceAudit(AccountTestInvoicingCommon):
         with self.assertRaises(AccessError):
             invoice8.with_user(self.reader).with_context(allowed_company_ids=[8]).action_post()
 
+    def test_auditor_role_blocks_preexisting_accounting_admin_write_grants(self):
+        invoice = self._invoice()
+        old_groups = self.actor.groups_id
+        self.actor.write({'groups_id': [Command.link(self.env.ref('sentinel_invoice_audit.group_audit_reader').id)]})
+        self.assertTrue(old_groups <= self.actor.groups_id)
+        actor = self.actor.with_context(allowed_company_ids=[8, 9])
+        with self.assertRaises(AccessError):
+            invoice.with_user(actor).action_post()
+        for model in ['account.move', 'account.move.line', 'account.payment',
+                      'account.partial.reconcile', 'account.full.reconcile']:
+            records = self.env[model].with_user(actor).with_context(allowed_company_ids=[8, 9])
+            for operation, args in [('create', [{}]), ('write', [{}]), ('unlink', [])]:
+                with self.assertRaises(AccessError):
+                    getattr(records, operation)(*args)
+            with self.assertRaises(AccessError):
+                records.sudo().with_context(skip_audit=True).create({})
+        self.assertTrue(invoice.with_user(actor).read(['name']))
+
     def test_scheduled_origin_and_spoofed_rpc_context(self):
         invoice = self._invoice()
         invoice.with_user(self.actor).with_context(allowed_company_ids=[8, 9]).with_context(sentinel_origin='scheduled_job', skip_audit=True).write({'ref': 'not a cron'})
