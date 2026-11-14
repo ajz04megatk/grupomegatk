@@ -201,6 +201,38 @@ class TestInvoiceAudit(AccountTestInvoicingCommon):
                 raise ValueError('synthetic rollback')
         self.assertEqual(len(self._events(invoice)), count)
 
+    def test_native_cron_entrypoint_proves_scheduled_execution(self):
+        invoice = self._invoice()
+        cron = self.env['ir.cron'].create({
+            'name': 'Synthetic audit cron', 'active': False, 'user_id': self.actor.id,
+            'model_id': self.env['ir.model']._get('account.move').id, 'state': 'code',
+            'code': "env['account.move'].browse(%s).write({'ref': 'real cron entrypoint'})" % invoice.id,
+        })
+        cron.with_user(self.actor).with_context(allowed_company_ids=[8, 9])._callback(
+            'Synthetic audit cron', cron.ir_actions_server_id.id)
+        event = self._events(invoice, source_model='account.move')[-1]
+        self.assertEqual(event.execution_kind, 'scheduled_job')
+        self.assertEqual(event.actor_res_id, self.actor.id)
+        self.assertEqual(event.origin_evidence['cron_id'], cron.id)
+
+    def test_native_automation_entrypoint_proves_automatic_execution(self):
+        invoice = self._invoice()
+        model_id = self.env['ir.model']._get('account.move').id
+        automation = self.env['base.automation'].create({
+            'name': 'Synthetic inactive automation', 'active': False,
+            'model_id': model_id, 'trigger': 'on_create_or_write',
+            'action_server_ids': [Command.create({
+                'name': 'Synthetic audit action', 'model_id': model_id,
+                'state': 'code', 'code': "record.write({'ref': 'real automation entrypoint'})",
+            })],
+        })
+        automation.with_user(self.actor).with_context(allowed_company_ids=[8, 9])._process(
+            invoice.with_user(self.actor).with_context(allowed_company_ids=[8, 9]))
+        event = self._events(invoice, source_model='account.move')[-1]
+        self.assertEqual(event.execution_kind, 'automation')
+        self.assertEqual(event.actor_res_id, self.actor.id)
+        self.assertIn(automation.id, event.origin_evidence['automation_ids'])
+
     def test_native_chatter_projection_does_not_mark_notifications_read(self):
         invoice = self._invoice()
         message = invoice.message_post(body='Synthetic historical content')
