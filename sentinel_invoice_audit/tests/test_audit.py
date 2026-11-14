@@ -197,7 +197,7 @@ class TestInvoiceAudit(AccountTestInvoicingCommon):
                     getattr(records, operation)(*args)
             with self.assertRaises(AccessError):
                 records.sudo().with_context(skip_audit=True).create({})
-        self.assertTrue(invoice.with_user(actor).read(['name']))
+        self.assertTrue(invoice.with_user(actor).with_context(allowed_company_ids=[8, 9]).read(['name']))
 
     def test_scheduled_origin_and_spoofed_rpc_context(self):
         invoice = self._invoice()
