@@ -97,6 +97,7 @@ class TestInvoiceAudit(AccountTestInvoicingCommon):
         self.assertEqual(posted[-1].actor_res_id, self.actor.id)
         self.assertEqual(posted[-1].invoice_refs[0]['payment_term_id'], self.pay_terms_b.id)
         previous = posted[-1].invoice_refs
+        invoice.button_draft()
         invoice.write({'invoice_payment_term_id': self.pay_terms_a.id})
         self.assertEqual(posted[-1].invoice_refs, previous)
         self.assertEqual(posted[-1].timezone, 'UTC')
@@ -110,7 +111,7 @@ class TestInvoiceAudit(AccountTestInvoicingCommon):
         invoice.button_draft()
         invoice.button_cancel()
         events = self._events(invoice, source_model='account.move')
-        ref_changes = [change for event in events for change in event.changes if change['field'] == 'ref']
+        ref_changes = [change for event in events for change in (event.changes or []) if change['field'] == 'ref']
         self.assertTrue(any(change['new'] == 'changed then reverted' for change in ref_changes))
         self.assertTrue(any(change['old'] == 'changed then reverted' for change in ref_changes))
         self.assertIn('reset_to_draft', events.mapped('event_type'))
@@ -202,18 +203,43 @@ class TestInvoiceAudit(AccountTestInvoicingCommon):
 
     def test_native_chatter_projection_does_not_mark_notifications_read(self):
         invoice = self._invoice()
-        invoice.message_post(body='Synthetic historical content')
+        message = invoice.message_post(body='Synthetic historical content')
+        self.env['mail.tracking.value'].sudo().create({
+            'mail_message_id': message.id,
+            'field_id': self.env['ir.model.fields']._get('account.move', 'invoice_payment_term_id').id,
+            'old_value_integer': self.pay_terms_a.id, 'old_value_char': self.pay_terms_a.name,
+            'new_value_integer': self.pay_terms_b.id, 'new_value_char': self.pay_terms_b.name,
+        })
         invoice9 = self._invoice(self.company9)
         foreign = invoice9.message_post(body='OTHER COMPANY MUST NOT LEAK')
         model = self.env['sentinel.invoice.audit.message'].with_user(self.reader).with_context(allowed_company_ids=[8])
         rows = model.search_read([('invoice_res_id', '=', invoice.id)], ['id', 'body', 'tracking_details', 'attribution'])
         self.assertTrue(any('Synthetic historical content' in row['body'] for row in rows))
+        tracked = next(row for row in rows if row['id'] == message.id)['tracking_details']['values']
+        self.assertEqual(tracked[0]['fieldName'], 'invoice_payment_term_id')
+        self.assertEqual(tracked[0]['oldValue']['value'], self.pay_terms_a.name)
+        self.assertEqual(tracked[0]['newValue']['value'], self.pay_terms_b.name)
+        with self.assertRaises(AccessError):
+            self.env['mail.tracking.value'].with_user(self.reader).with_context(allowed_company_ids=[8]).search([])
         self.assertTrue(all(row['attribution']['executor_proven'] is False for row in rows))
         self.assertFalse(model.search([('id', '=', foreign.id)]))
         with self.assertRaises(AccessError):
             model.browse(foreign.id).read(['body'])
         with self.assertRaises(AccessError):
             model.browse(rows[0]['id']).write({'body': 'forbidden'})
+
+    def test_audit_respects_native_invoice_record_rules(self):
+        invoice = self._invoice()
+        event = self._events(invoice, source_model='account.move')[-1]
+        self.env['ir.rule'].create({
+            'name': 'Synthetic native invoice restriction',
+            'model_id': self.env['ir.model']._get('account.move').id,
+            'domain_force': "[('id', '!=', %s)] if user.login == 'synthetic_audit_reader' else []" % invoice.id,
+        })
+        model = self.env['sentinel.invoice.audit.event'].with_user(self.reader).with_context(allowed_company_ids=[8])
+        self.assertFalse(model.search([('invoice_res_id', '=', invoice.id)]))
+        with self.assertRaises(AccessError):
+            model.browse(event.id).read(['before_snapshot'])
 
     def test_coverage_has_real_start_and_no_backfilled_claim(self):
         coverage = self.env['sentinel.invoice.audit.coverage'].sudo().search([('company_id', '=', 8)])

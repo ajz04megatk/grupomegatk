@@ -66,7 +66,8 @@ class AuditMessage(models.Model):
             message = self.env['mail.message'].browse(row.source_message_id)
             native = message.sudo().tracking_value_ids
             visible = native._filter_has_field_access(self.env)
-            safe = visible.filtered(lambda tracking: tracking.field_id
+            safe = visible.filtered(lambda tracking: tracking.field_id.model == 'account.move'
+                                     and tracking.field_id.ttype != 'binary'
                                      and not SECRET.search(tracking.field_id.name))
             row.tracking_details = {
                 'source': 'mail.tracking.value',
